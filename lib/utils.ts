@@ -1,36 +1,45 @@
-import { type ClassValue, clsx } from "clsx"
+import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import type { CartItem } from "@/app/page" // Assuming CartItem is defined in app/page.tsx
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
 
 export function formatCurrency(amount: number, currencySymbol = "$", decimalPlaces = 2): string {
-  return `${currencySymbol}${amount.toFixed(decimalPlaces)}`
+  const formatter = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: decimalPlaces,
+    maximumFractionDigits: decimalPlaces,
+    useGrouping: true,
+  })
+  return `${currencySymbol}${formatter.format(amount)}`
+}
+
+interface CartItem {
+  price: number
+  quantity: number
+  discount?: number // Percentage discount
 }
 
 export function calculateTotal(
   cart: CartItem[],
   taxRate: number,
-  additionalFees: { description: string; amount: number }[],
+  fees: { description: string; amount: number }[],
   totalOrderDiscountPercentage: number,
 ) {
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const itemDiscounts = cart.reduce((sum, item) => sum + (item.discount || 0) * item.quantity, 0)
+  let subtotal = 0
+  let totalDiscountAmount = 0
 
-  const totalFeesAmount = additionalFees.reduce((sum, fee) => sum + fee.amount, 0)
+  cart.forEach((item) => {
+    const itemTotal = item.price * item.quantity
+    const itemDiscountAmount = item.discount ? (itemTotal * item.discount) / 100 : 0
+    subtotal += itemTotal - itemDiscountAmount
+  })
 
-  // Calculate total discount amount based on percentage
-  const totalOrderDiscountAmount = subtotal * (totalOrderDiscountPercentage / 100)
+  // Apply total order discount after item-specific discounts
+  const orderDiscountAmount = (subtotal * totalOrderDiscountPercentage) / 100
+  totalDiscountAmount += orderDiscountAmount
+  subtotal -= orderDiscountAmount
 
-  // Total discount is sum of item-specific discounts and order-level discount
-  const totalDiscountAmount = itemDiscounts + totalOrderDiscountAmount
+  const totalFeesAmount = fees.reduce((sum, fee) => sum + fee.amount, 0)
 
-  const taxableAmount = subtotal - totalDiscountAmount + totalFeesAmount
-  const taxAmount = taxableAmount > 0 ? taxableAmount * taxRate : 0
-
-  const total = subtotal - totalDiscountAmount + totalFeesAmount + taxAmount
+  const taxAmount = subtotal * taxRate
+  const total = subtotal + taxAmount + totalFeesAmount
 
   return {
     subtotal,
@@ -39,4 +48,7 @@ export function calculateTotal(
     taxAmount,
     total,
   }
+}
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
 }

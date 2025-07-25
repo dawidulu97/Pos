@@ -41,21 +41,35 @@ CREATE TABLE products (
   name VARCHAR(255) NOT NULL,
   price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
   image VARCHAR(10) DEFAULT '📦',
-  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
   stock INTEGER DEFAULT 0 CHECK (stock >= 0),
   sku VARCHAR(100) UNIQUE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  category TEXT -- Added 'category' column
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Update existing products to have a category_id if they don't already
 -- This assumes 'category' column in 'products' table exists and contains category names
 -- You might need to adjust this based on your actual data and desired mapping
-UPDATE products p
-SET category_id = c.id
-FROM categories c
-WHERE p.category = c.name;
+UPDATE products
+SET category_id =
+    CASE
+        WHEN category_id = 'Surface' THEN 'cat_surface'
+        WHEN category_id = 'Accessories' THEN 'cat_accessories'
+        WHEN category_id = 'Laptops' THEN 'cat_laptops'
+        WHEN category_id = 'Desktops' THEN 'cat_desktops'
+        WHEN category_id = 'Monitors' THEN 'cat_monitors'
+        WHEN category_id = 'Peripherals' THEN 'cat_peripherals'
+        WHEN category_id = 'Software' THEN 'cat_software'
+        WHEN category_id = 'Services' THEN 'cat_services'
+        WHEN category_id = 'Coffee Equipment' THEN 'cat_coffee_equipment'
+        WHEN category_id = 'Coffee Beans' THEN 'cat_coffee_beans'
+        WHEN category_id = 'Merchandise' THEN 'cat_merchandise'
+        WHEN category_id = 'Drinks' THEN 'cat_drinks'
+        WHEN category_id = 'Food' THEN 'cat_food'
+        ELSE 'cat_uncategorized' -- Default category for existing products without a match
+    END
+WHERE category_id IS NOT NULL;
 
 -- Ensure all products have a category. If a product's category is NULL or doesn't match
 -- an existing category, assign it to 'Uncategorized'.
@@ -102,20 +116,7 @@ CREATE TABLE orders (
   notes TEXT,
   shipping_info TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  delivery_provider_id UUID REFERENCES delivery_providers(id) ON DELETE SET NULL,
-  total_amount NUMERIC(10, 2) NOT NULL DEFAULT 0.00, -- Added 'total_amount' column
-  tax_amount NUMERIC(10, 2) NOT NULL DEFAULT 0.00, -- Added 'tax_amount' column
-  total_discount NUMERIC(10, 2) NOT NULL DEFAULT 0.00, -- Added 'total_discount' column
-  total_fees NUMERIC(10, 2) NOT NULL DEFAULT 0.00, -- Added 'total_fees' column
-  payment_status TEXT NOT NULL DEFAULT 'unpaid', -- Added 'payment_status' column
-  voided_at TIMESTAMP WITH TIME ZONE, -- Added 'voided_at' column
-  refunded_at TIMESTAMP WITH TIME ZONE, -- Added 'refunded_at' column
-  refund_reason TEXT, -- Added 'refund_reason' column
-  cash_drawer_start_amount NUMERIC(10, 2), -- Added 'cash_drawer_start_amount' column
-  cash_drawer_end_amount NUMERIC(10, 2), -- Added 'cash_drawer_end_amount' column
-  cash_in_amount NUMERIC(10, 2), -- Added 'cash_in_amount' column
-  cash_out_amount NUMERIC(10, 2), -- Added 'cash_out_amount' column
-  z_report_printed_at TIMESTAMP WITH TIME ZONE -- Added 'z_report_printed_at' column
+  delivery_provider_id UUID REFERENCES delivery_providers(id) ON DELETE SET NULL
 );
 
 -- Insert sample customers first
@@ -125,17 +126,17 @@ INSERT INTO customers (id, name, email, phone, address) VALUES
 ('00000000-0000-0000-0000-000000000003', 'Sarah Johnson', 'sarah@example.com', '098-765-4321', '456 Oak Ave');
 
 -- Insert sample products
-INSERT INTO products (name, price, image, category_id, stock, sku, category) VALUES
-('Apples', 0.87, '🍎', 'cat_food', 50, 'FRUIT-001', 'Food'),
-('Bananas', 0.87, '🍌', 'cat_food', 30, 'FRUIT-002', 'Food'),
-('Strawberries', 1.00, '🍓', 'cat_food', 25, 'FRUIT-003', 'Food'),
-('Baguette', 2.50, '🥖', 'cat_food', 8, 'BAKERY-001', 'Food'),
-('Carrots', 0.65, '🥕', 'cat_food', 40, 'VEG-001', 'Food'),
-('Tomatoes', 1.20, '🍅', 'cat_food', 35, 'VEG-002', 'Food'),
-('Milk', 1.85, '🥛', 'cat_food', 20, 'DAIRY-001', 'Food'),
-('Cheese', 3.50, '🧀', 'cat_food', 15, 'DAIRY-002', 'Food'),
-('Chicken Breast', 5.99, '🐔', 'cat_food', 12, 'MEAT-001', 'Food'),
-('Orange Juice', 2.25, '🍊', 'cat_food', 18, 'BEV-001', 'Food');
+INSERT INTO products (name, price, image, category_id, stock, sku) VALUES
+('Apples', 0.87, '🍎', 'cat_food', 50, 'FRUIT-001'),
+('Bananas', 0.87, '🍌', 'cat_food', 30, 'FRUIT-002'),
+('Strawberries', 1.00, '🍓', 'cat_food', 25, 'FRUIT-003'),
+('Baguette', 2.50, '🥖', 'cat_food', 8, 'BAKERY-001'),
+('Carrots', 0.65, '🥕', 'cat_food', 40, 'VEG-001'),
+('Tomatoes', 1.20, '🍅', 'cat_food', 35, 'VEG-002'),
+('Milk', 1.85, '🥛', 'cat_food', 20, 'DAIRY-001'),
+('Cheese', 3.50, '🧀', 'cat_food', 15, 'DAIRY-002'),
+('Chicken Breast', 5.99, '🐔', 'cat_food', 12, 'MEAT-001'),
+('Orange Juice', 2.25, '🍊', 'cat_food', 18, 'BEV-001');
 
 -- Insert default delivery providers and their city-specific fees
 INSERT INTO delivery_providers (name, default_fee)
@@ -239,40 +240,3 @@ INSERT INTO orders (customer_id, customer_name, items, subtotal, tax, total, pay
 ('00000000-0000-0000-0000-000000000002', 'John Smith', 
 '[{"id": "1", "name": "Apples", "price": 0.87, "quantity": 2, "total": 1.74}, {"id": "2", "name": "Bananas", "price": 0.87, "quantity": 1, "total": 0.87}]'::jsonb,
 2.61, 0.39, 3.00, 'Cash', 'completed', 'First test order', (SELECT id FROM delivery_providers WHERE name = 'Unknown'));
-
--- Seed more categories if needed
-INSERT INTO categories (name) VALUES
-('Home Goods'),
-('Sports'),
-('Books')
-ON CONFLICT (name) DO NOTHING;
-
--- Update existing products to assign a category if they don't have one
-UPDATE products SET category = 'Electronics' WHERE category IS NULL;
-
--- Update existing products to set default values for new columns if they are NULL
-UPDATE orders SET
-    total_amount = COALESCE(total_amount, total),
-    subtotal = COALESCE(subtotal, total),
-    tax_amount = COALESCE(tax_amount, 0.00),
-    total_discount = COALESCE(total_discount, 0.00),
-    total_fees = COALESCE(total_fees, 0.00),
-    payment_status = COALESCE(payment_status, 'unpaid')
-WHERE total_amount IS NULL OR subtotal IS NULL OR tax_amount IS NULL OR total_discount IS NULL OR total_fees IS NULL OR payment_status IS NULL;
-
--- Create order_items table if it doesn't exist
-CREATE TABLE IF NOT EXISTS order_items (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
-    product_id UUID REFERENCES products(id) ON DELETE SET NULL,
-    name VARCHAR(255) NOT NULL,
-    price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
-    quantity INTEGER NOT NULL CHECK (quantity >= 0),
-    total DECIMAL(10,2) NOT NULL CHECK (total >= 0),
-    discount NUMERIC(10, 2) NOT NULL DEFAULT 0.00 -- Added 'discount' column
-);
-
--- Update existing order_items to set default values for new columns if they are NULL
-UPDATE order_items SET
-    discount = COALESCE(discount, 0.00)
-WHERE discount IS NULL;

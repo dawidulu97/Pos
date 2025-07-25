@@ -1,57 +1,77 @@
 "use client"
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { useState } from "react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { useEffect } from "react"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { QrCode, CameraOff } from "lucide-react"
 
 interface QrScannerModalProps {
   isOpen: boolean
   onClose: () => void
-  /** Will receive the scanned SKU (simulated in preview) */
-  onScanResult: (sku: string) => void
+  onScan: (data: string) => void
 }
 
-/**
- * Stubbed QR-code scanner.
- *
- * - In a real POS device we would mount a camera stream here and read QR codes.
- * - In the preview we show a simple dialog and offer a *Simulate Scan* button
- *   to pass a hard-coded SKU back to the parent component.
- */
-export function QrScannerModal({ isOpen, onClose, onScanResult }: QrScannerModalProps) {
-  /* Optional: focus the dialog when it opens */
-  useEffect(() => {
-    if (!isOpen) return
-    const timer = setTimeout(() => {
-      /* auto-close after 30 s to avoid forgotten overlays */
+export function QrScannerModal({ isOpen, onClose, onScan }: QrScannerModalProps) {
+  const [manualInput, setManualInput] = useState("")
+  
+  // We're removing the QR scanner functionality and focusing on manual input
+  // This avoids the errors with the HTML5QrcodeScanner library
+  
+  const handleManualSubmit = () => {
+    if (manualInput.trim()) {
+      onScan(manualInput.trim())
       onClose()
-    }, 30_000)
-    return () => clearTimeout(timer)
-  }, [isOpen, onClose])
-
-  const handleSimulate = () => {
-    onScanResult("DEMO-SKU-123")
-    onClose()
+    }
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>QR Scanner (Preview)</DialogTitle>
+          <DialogTitle>Enter Product SKU</DialogTitle>
+          <DialogDescription>Enter the product's SKU manually to add it to the cart.</DialogDescription>
         </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="flex flex-col items-center justify-center h-64 bg-gray-100 rounded-md p-4 text-center">
+            <CameraOff className="w-12 h-12 mb-4 text-gray-500" />
+            <p className="font-semibold">Camera Scanner Temporarily Disabled</p>
+            <p className="text-sm mt-2">
+              Please use manual SKU entry below to add products to your cart.
+            </p>
+          </div>
 
-        <p className="text-sm text-muted-foreground">
-          Camera-based scanning is disabled in this online preview.
-          <br />
-          Use the button below to simulate reading a QR code.
-        </p>
-
-        <DialogFooter className="mt-4 gap-2">
-          <Button variant="secondary" onClick={handleSimulate}>
-            Simulate Scan
+          <div className="space-y-2">
+            <Label htmlFor="manual-sku">Manual SKU Entry</Label>
+            <Input
+              id="manual-sku"
+              placeholder="Enter product SKU"
+              value={manualInput}
+              onChange={(e) => setManualInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleManualSubmit()
+                }
+              }}
+              autoFocus
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
           </Button>
-          <Button onClick={onClose}>Close</Button>
+          <Button onClick={handleManualSubmit} disabled={!manualInput.trim()}>
+            <QrCode className="w-4 h-4 mr-2" /> Submit SKU
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

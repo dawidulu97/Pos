@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -10,12 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { PlusCircle, XCircle } from "lucide-react"
+import { Plus, Trash2 } from "lucide-react"
+import { v4 as uuidv4 } from "uuid"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { formatCurrency } from "@/lib/utils"
-import { useSettings } from "@/lib/settings-context"
-import { toast } from "@/hooks/use-toast"
+import type { Settings } from "@/lib/settings-context"
 
 interface Fee {
   id: string
@@ -27,46 +28,45 @@ interface FeeModalProps {
   isOpen: boolean
   onClose: () => void
   currentFees: { description: string; amount: number }[]
-  onApplyFees: (fees: { description: string; amount: number }[]) => void
+  onSaveFees: (fees: { description: string; amount: number }[]) => void
+  settings: Settings // Add settings prop
 }
 
-export function FeeModal({ isOpen, onClose, currentFees, onApplyFees }: FeeModalProps) {
-  const { settings } = useSettings()
-  const [fees, setFees] = useState<Fee[]>(currentFees.map((f) => ({ ...f, id: crypto.randomUUID() })))
-  const [newFeeDescription, setNewFeeDescription] = useState("")
-  const [newFeeAmount, setNewFeeAmount] = useState("")
+export function FeeModal({ isOpen, onClose, currentFees, onSaveFees, settings }: FeeModalProps) {
+  const [fees, setFees] = useState<Fee[]>([])
 
   useEffect(() => {
-    setFees(currentFees.map((f) => ({ ...f, id: crypto.randomUUID() })))
-    setNewFeeDescription("")
-    setNewFeeAmount("")
-  }, [currentFees, isOpen])
+    if (isOpen) {
+      // Assign unique IDs to currentFees for easier management
+      setFees(currentFees.map((fee) => ({ ...fee, id: fee.id || uuidv4() })))
+    }
+  }, [isOpen, currentFees])
 
   const handleAddFee = () => {
-    const amount = Number.parseFloat(newFeeAmount)
-    if (!newFeeDescription.trim() || isNaN(amount) || amount <= 0) {
-      toast({
-        title: "Invalid Fee",
-        description: "Please enter a valid description and a positive amount for the fee.",
-        variant: "destructive",
-      })
-      return
-    }
-    setFees((prev) => [...prev, { id: crypto.randomUUID(), description: newFeeDescription.trim(), amount: amount }])
-    setNewFeeDescription("")
-    setNewFeeAmount("")
+    setFees((prev) => [...prev, { id: uuidv4(), description: "", amount: 0 }])
+  }
+
+  const handleFeeChange = (id: string, field: keyof Fee, value: string | number) => {
+    setFees((prev) =>
+      prev.map((fee) =>
+        fee.id === id
+          ? {
+              ...fee,
+              [field]: field === "amount" ? (isNaN(Number(value)) ? 0 : Number(value)) : value,
+            }
+          : fee,
+      ),
+    )
   }
 
   const handleRemoveFee = (id: string) => {
     setFees((prev) => prev.filter((fee) => fee.id !== id))
   }
 
-  const handleApply = () => {
-    onApplyFees(fees.map(({ id, ...rest }) => rest)) // Remove the temporary 'id' before applying
-    toast({
-      title: "Fees Applied",
-      description: `Applied ${fees.length} additional fees to the order.`,
-    })
+  const handleSave = () => {
+    // Filter out fees with empty description or zero amount if desired, or validate
+    const validFees = fees.filter((fee) => fee.description.trim() !== "" && fee.amount > 0)
+    onSaveFees(validFees.map(({ id, ...rest }) => rest)) // Remove the temporary ID before saving
     onClose()
   }
 
@@ -74,65 +74,57 @@ export function FeeModal({ isOpen, onClose, currentFees, onApplyFees }: FeeModal
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[475px]">
+      <DialogContent className="sm:max-w-[500px] h-[70vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Additional Fees</DialogTitle>
-          <DialogDescription>Add or manage additional fees for the current order.</DialogDescription>
+          <DialogTitle>Add Additional Fees</DialogTitle>
+          <DialogDescription>
+            Add any extra charges to the order (e.g., delivery fee, service charge).
+          </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="newFeeDescription">Add New Fee</Label>
-            <div className="flex gap-2">
-              <Input
-                id="newFeeDescription"
-                placeholder="Fee description"
-                value={newFeeDescription}
-                onChange={(e) => setNewFeeDescription(e.target.value)}
-                className="flex-1"
-              />
-              <Input
-                type="number"
-                placeholder="Amount"
-                value={newFeeAmount}
-                onChange={(e) => setNewFeeAmount(e.target.value)}
-                className="w-24"
-                min="0"
-                step="0.01"
-              />
-              <Button size="icon" onClick={handleAddFee}>
-                <PlusCircle className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          {fees.length > 0 && (
-            <div className="space-y-2">
-              <Label>Current Fees</Label>
-              <div className="border rounded-md p-3 space-y-2">
-                {fees.map((fee) => (
-                  <div key={fee.id} className="flex items-center justify-between text-sm">
-                    <span>{fee.description}</span>
-                    <div className="flex items-center gap-2">
-                      <span>{formatCurrency(fee.amount, settings.currencySymbol, settings.decimalPlaces)}</span>
-                      <Button variant="ghost" size="icon" onClick={() => handleRemoveFee(fee.id)}>
-                        <XCircle className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                <div className="flex justify-between items-center font-bold border-t pt-2 mt-2">
-                  <span>Total Additional Fees:</span>
-                  <span>{formatCurrency(totalFees, settings.currencySymbol, settings.decimalPlaces)}</span>
+        <ScrollArea className="flex-1 py-4 pr-4">
+          <div className="grid gap-4">
+            {fees.map((fee) => (
+              <div key={fee.id} className="flex items-end gap-2">
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor={`fee-description-${fee.id}`}>Description</Label>
+                  <Input
+                    id={`fee-description-${fee.id}`}
+                    value={fee.description}
+                    onChange={(e) => handleFeeChange(fee.id, "description", e.target.value)}
+                    placeholder="e.g., Delivery Fee"
+                  />
                 </div>
+                <div className="w-28 space-y-2">
+                  <Label htmlFor={`fee-amount-${fee.id}`}>Amount</Label>
+                  <Input
+                    id={`fee-amount-${fee.id}`}
+                    type="number"
+                    value={fee.amount}
+                    onChange={(e) => handleFeeChange(fee.id, "amount", e.target.value)}
+                    min={0}
+                    step={0.01}
+                    placeholder="0.00"
+                  />
+                </div>
+                <Button variant="destructive" size="icon" onClick={() => handleRemoveFee(fee.id)}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
               </div>
-            </div>
-          )}
+            ))}
+            <Button variant="outline" onClick={handleAddFee} className="mt-2 bg-transparent">
+              <Plus className="w-4 h-4 mr-2" /> Add Fee
+            </Button>
+          </div>
+        </ScrollArea>
+        <div className="flex justify-between items-center font-bold text-lg mt-4 pt-4 border-t">
+          <span>Total Fees:</span>
+          <span>{formatCurrency(totalFees, settings.currencySymbol, settings.decimalPlaces)}</span>
         </div>
-        <DialogFooter>
+        <DialogFooter className="mt-4">
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleApply}>Apply Fees</Button>
+          <Button onClick={handleSave}>Save Fees</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

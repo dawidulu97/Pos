@@ -71,7 +71,7 @@ CREATE TABLE orders (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   customer_name VARCHAR(255) NOT NULL,
-  items JSONB NOT NULL DEFAULT '[]'::jsonb, -- Added 'items' column
+  items JSONB NOT NULL,
   subtotal DECIMAL(10,2) NOT NULL CHECK (subtotal >= 0),
   tax DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (tax >= 0),
   total DECIMAL(10,2) NOT NULL CHECK (total >= 0),
@@ -83,17 +83,7 @@ CREATE TABLE orders (
   delivery_provider_id UUID REFERENCES delivery_providers(id) ON DELETE SET NULL, -- Updated to reference delivery_providers table
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   total_discount NUMERIC(10, 2) DEFAULT 0, -- Added total_discount column
-  total_fees NUMERIC(10, 2) DEFAULT 0, -- Added total_fees column
-  payment_status TEXT DEFAULT 'unpaid', -- 'paid', 'unpaid', 'partially_paid'
-  voided_at TIMESTAMP WITH TIME ZONE,
-  refunded_at TIMESTAMP WITH TIME ZONE,
-  refund_reason TEXT,
-  cash_drawer_start_amount NUMERIC(10, 2),
-  cash_drawer_end_amount NUMERIC(10, 2),
-  cash_in_amount NUMERIC(10, 2),
-  cash_out_amount NUMERIC(10, 2),
-  z_report_printed_at TIMESTAMP WITH TIME ZONE,
-  order_type TEXT DEFAULT 'retail' -- 'retail' or 'delivery'
+  total_fees NUMERIC(10, 2) DEFAULT 0 -- Added total_fees column
 );
 
 -- Create order_items table
@@ -101,7 +91,7 @@ CREATE TABLE order_items (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
-  name TEXT, -- Added name column for denormalization
+  name VARCHAR(255) NOT NULL,
   price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
   quantity INTEGER NOT NULL CHECK (quantity >= 0),
   total DECIMAL(10,2) NOT NULL CHECK (total >= 0),
@@ -306,48 +296,3 @@ WHERE email IS NULL;
 UPDATE customers
 SET phone = ''
 WHERE phone IS NULL;
-
--- Update existing orders to populate the 'items' column based on 'order_items'
--- This is a complex operation and might require a custom function or a more sophisticated migration
--- For simplicity, this example assumes you might manually backfill or handle this in application logic
--- A direct SQL migration for this would look something like:
-/*
-UPDATE orders o
-SET items = (
-    SELECT jsonb_agg(jsonb_build_object(
-        'product_id', oi.product_id,
-        'quantity', oi.quantity,
-        'price', oi.price,
-        'discount', oi.discount,
-        'name', p.name -- Assuming product name is needed in the summary
-    ))
-    FROM order_items oi
-    JOIN products p ON oi.product_id = p.id
-    WHERE oi.order_id = o.id
-);
-*/
--- Note: The above UPDATE statement is commented out as it might be too complex for a simple script
--- and could be better handled in application-level data migration if needed for existing data.
--- For new orders, the application logic will populate this column.
-
--- Backfill `name` for existing `order_items` from `products` table
-UPDATE order_items oi
-SET name = p.name
-FROM products p
-WHERE oi.product_id = p.id AND oi.name IS NULL;
-
--- Make `name` column NOT NULL after backfilling
-ALTER TABLE order_items ALTER COLUMN name SET NOT NULL;
-
--- Update existing orders with calculated values (example, adjust as needed)
--- This is a simplified example and might need more complex logic
--- depending on how your existing data is structured.
-UPDATE orders
-SET
-    subtotal = (SELECT COALESCE(SUM(oi.quantity * oi.price), 0) FROM order_items oi WHERE oi.order_id = orders.id),
-    total_discount = (SELECT COALESCE(SUM(oi.discount), 0) FROM order_items oi WHERE oi.order_id = orders.id),
-    total_fees = 0, -- Assuming no existing fees, or calculate if applicable
-    tax_amount = (SELECT COALESCE(SUM(oi.quantity * oi.price * 0.07), 0) FROM order_items oi WHERE oi.order_id = orders.id), -- Assuming 7% tax
-    total_amount = (SELECT COALESCE(SUM(oi.quantity * oi.price * 1.07), 0) FROM order_items oi WHERE oi.order_id = orders.id) -- Assuming 7% tax
-WHERE
-    total_amount = 0; -- Only update if not already calculated

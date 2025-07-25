@@ -1,638 +1,1226 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Plus, Minus, Trash2, DollarSign, User, Tag, ClipboardList, ScanLine, Percent, Wallet, X } from "lucide-react"
-import { formatCurrency, calculateTotal } from "@/lib/utils"
-import { ProductModal } from "@/components/product-modal"
+import { Card, CardContent } from "@/components/ui/card"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  Truck,
+  FileText,
+  Percent,
+  DollarSign,
+  Search,
+  Plus,
+  Minus,
+  Cloud,
+  Bell,
+  Settings,
+  Wifi,
+  Share2,
+  ClipboardList,
+  Wallet,
+  Receipt,
+  Users,
+  QrCode,
+  Tag,
+  Trash2,
+} from "lucide-react"
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+
+// Import Supabase and database operations
+import type { Product, Customer, Order, OrderItem, DeliveryProvider } from "@/lib/supabase"
+
+// Import all the modal components
 import { CustomerModal } from "@/components/customer-modal"
+import { ShippingModal } from "@/components/shipping-modal"
+import { NoteModal } from "@/components/note-modal"
 import { DiscountModal } from "@/components/discount-modal"
 import { FeeModal } from "@/components/fee-modal"
-import { PaymentModal } from "@/components/payment-modal"
-import { OrdersModal } from "@/components/orders-modal"
 import { RefundModal } from "@/components/refund-modal"
+import { ProductModal } from "@/components/product-modal"
+import { PaymentModal } from "@/components/payment-modal"
+import { LoadModal } from "@/components/load-modal"
+import { OrdersModal } from "@/components/orders-modal"
 import { CashManagementModal } from "@/components/cash-management-modal"
+import { QrCodeModal } from "@/components/qr-code-modal"
 import { QrScannerModal } from "@/components/qr-scanner-modal"
-import { useSupabase } from "@/lib/supabase-context"
-import { useSettings } from "@/lib/settings-context"
+import { useSettings } from "@/lib/settings-context" // Import useSettings
+import { formatCurrency, calculateTotal } from "@/lib/utils" // Import formatCurrency
 import { toast } from "@/hooks/use-toast"
-import { printReceipt, printInvoice } from "@/lib/receipt-printer"
-import type { Product, Customer, Order, OrderItem, Category, DeliveryProvider } from "@/lib/supabase"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { printReceipt } from "@/lib/receipt-printer"
+import { useSupabase } from "@/lib/supabase-context"
+import Link from "next/link"
 
 interface CartItem extends Product {
   quantity: number
-  discount?: number
+  discount?: number // Percentage discount
+  note?: string
 }
 
-export default function POSPage() {
+// Default/fallback data
+const defaultProducts: Product[] = [
+  {
+    id: "SLS2-001",
+    name: "Surface Laptop Studio 2",
+    price: 2499.99,
+    image: "💻",
+    category: "Surface",
+    stock: 10,
+    sku: "SLS2-001",
+  },
+  {
+    id: "SP9-001",
+    name: "Surface Pro 9",
+    price: 1299.0,
+    image: "💻",
+    category: "Surface",
+    stock: 15,
+    sku: "SP9-001",
+  },
+  {
+    id: "SG3-001",
+    name: "Surface Go 3",
+    price: 549.0,
+    image: "💻",
+    category: "Surface",
+    stock: 20,
+    sku: "SG3-001",
+  },
+  {
+    id: "SH2-001",
+    name: "Surface Headphones 2",
+    price: 249.0,
+    image: "🎧",
+    category: "Accessories",
+    stock: 30,
+    sku: "SH2-001",
+  },
+]
+
+const defaultCustomers: Customer[] = [
+  {
+    id: "00000000-0000-0000-0000-000000000001",
+    name: "Guest",
+    email: "",
+    phone: "",
+    address: "",
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000002",
+    name: "John Smith",
+    email: "john@example.com",
+    phone: "123-456-7890",
+    address: "123 Main St, Baghdad", // Example address with city
+  },
+]
+
+export default function POSApp() {
   const { dbOperations } = useSupabase()
-  const { settings, updateSettings } = useSettings()
+  const { settings } = useSettings()
 
   const [products, setProducts] = useState<Product[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
+  const [categories, setCategories] = useState<string[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [deliveryProviders, setDeliveryProviders] = useState<DeliveryProvider[]>([])
 
   const [cart, setCart] = useState<CartItem[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const [totalOrderDiscountPercentage, setTotalOrderDiscountPercentage] = useState(0)
-  const [additionalFees, setAdditionalFees] = useState<{ description: string; amount: number }[]>([])
-  const [currentCashInDrawer, setCurrentCashInDrawer] = useState(0)
+  const [orderNotes, setOrderNotes] = useState<string>("")
+  const [orderFees, setOrderFees] = useState<{ description: string; amount: number }[]>([])
+  const [totalOrderDiscountPercentage, setTotalOrderDiscountPercentage] = useState<number>(0)
+  const [currentCashInDrawer, setCurrentCashInDrawer] = useState<number>(0)
+  const [shippingDetails, setShippingDetails] = useState<{
+    address: string
+    cost: number
+    provider?: DeliveryProvider
+  } | null>(null)
 
+  const [loading, setLoading] = useState(true) // Declare the loading variable
+
+  // Modal states
   const [isProductModalOpen, setIsProductModalOpen] = useState(false)
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false)
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false)
   const [isFeeModalOpen, setIsFeeModalOpen] = useState(false)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
-  const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false)
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
+  const [isLoadModalOpen, setIsLoadModalOpen] = useState(false)
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false)
-  const [refundOrder, setRefundOrder] = useState<Order | null>(null)
+  const [orderToRefund, setOrderToRefund] = useState<Order | null>(null)
   const [isCashManagementModalOpen, setIsCashManagementModalOpen] = useState(false)
   const [isQrScannerModalOpen, setIsQrScannerModalOpen] = useState(false)
+  const [isQrCodeModalOpen, setIsQrCodeModalOpen] = useState(false)
+  const [productForQrCode, setProductForQrCode] = useState<Product | null>(null)
+  const [isShippingModalOpen, setIsShippingModalOpen] = useState(false)
+  const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false)
+  const [showVoidConfirmationModal, setShowVoidConfirmationModal] = useState(false) // New state for void confirmation
+  const [orderToVoid, setOrderToVoid] = useState<string | null>(null) // State to hold order ID to void
 
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState<string | null>("All Categories")
+  // Ref for the audio element
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const refreshData = useCallback(async () => {
-    const { data: productsData, error: productsError } = await dbOperations.getProducts()
-    if (!productsError) setProducts(productsData || [])
-
-    const { data: categoriesData, error: categoriesError } = await dbOperations.getCategories()
-    if (!categoriesError) setCategories(categoriesData || [])
-
-    const { data: customersData, error: customersError } = await dbOperations.getCustomers()
-    if (!customersError) setCustomers(customersData || [])
-
-    const ordersResponse = await fetch("/api/orders/fetch?storeId=dummy_store_id") // Pass a dummy storeId for now
-    const ordersResult = await ordersResponse.json()
-    if (ordersResponse.ok) {
-      setOrders(ordersResult.orders || [])
+  // Function to play a subtle success sound
+  const playSuccessSound = useCallback(() => {
+    console.log("Attempting to play notification sound...")
+    if (audioRef.current) {
+      audioRef.current.volume = 0.3 // Set volume to 30%
+      audioRef.current.play().catch((e) => console.error("Error playing notification sound:", e))
     } else {
-      console.error("Error fetching orders:", ordersResult.error)
-      toast({ title: "Error", description: `Failed to load orders: ${ordersResult.error}`, variant: "destructive" })
+      console.warn("Audio element not available for playback.")
     }
+  }, [])
 
-    const { data: providersData, error: providersError } = await dbOperations.getDeliveryProviders()
-    if (!providersError) setDeliveryProviders(providersData || [])
+  // Fetch initial data
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true)
+      const { data: productsData, error: productsError } = await dbOperations.getProducts()
+      if (productsError) console.error("Error fetching products:", productsError)
+      setProducts(productsData || [])
+
+      const { data: categoriesData, error: categoriesError } = await dbOperations.getCategories()
+      if (categoriesError) console.error("Error fetching categories:", categoriesError)
+      // ---- categories fallback handling ----
+      if (!categoriesError && categoriesData?.length) {
+        // Normal case – the table exists and returned rows
+        setCategories(categoriesData.map((c) => c.name))
+      } else {
+        // Fallback – table missing OR returned empty → derive from products
+        const derived = new Set<string>()
+        ;(productsData || []).forEach((p) => derived.add(p.category))
+        setCategories(Array.from(derived))
+        if (categoriesError) {
+          console.warn(
+            "Categories table missing – derived categories from products instead. " +
+              "(Run the categories migration to create the table.)",
+          )
+        }
+      }
+      // --------------------------------------
+
+      const { data: customersData, error: customersError } = await dbOperations.getCustomers()
+      if (customersError) console.error("Error fetching customers:", customersError)
+      setCustomers(customersData || [])
+      // Set selected customer to "Guest" or first customer if available
+      setSelectedCustomer(
+        (customersData || []).find((c) => c.name === "Guest") || (customersData || [])[0] || defaultCustomers[0],
+      )
+
+      const { data: ordersData, error: ordersError } = await dbOperations.getOrders()
+      if (ordersError) console.error("Error fetching orders:", ordersError)
+      setOrders(ordersData || [])
+
+      const { data: providersData, error: providersError } = await dbOperations.getDeliveryProviders()
+      if (providersError) console.error("Error fetching delivery providers:", providersError)
+      setDeliveryProviders(providersData || [])
+    }
+    fetchData().finally(() => setLoading(false)) // Set loading to false after fetching data
   }, [dbOperations])
 
-  useEffect(() => {
-    refreshData()
-  }, [refreshData])
+  // Cart calculations
+  const { subtotal, total, taxAmount, totalDiscountAmount, totalFeesAmount } = useMemo(() => {
+    return calculateTotal(cart, settings.taxRate, orderFees, totalOrderDiscountPercentage)
+  }, [cart, settings.taxRate, orderFees, totalOrderDiscountPercentage])
 
   const filteredProducts = useMemo(() => {
-    let filtered = products.filter(
+    return products.filter(
       (product) =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku?.toLowerCase().includes(searchTerm.toLowerCase()),
+        (selectedCategory === null || product.category === selectedCategory) &&
+        (product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          product.sku.toLowerCase().includes(searchTerm.toLowerCase())),
     )
-    if (selectedCategory !== "All Categories") {
-      filtered = filtered.filter((product) => product.category === selectedCategory)
-    }
-    return filtered
-  }, [products, searchTerm, selectedCategory])
+  }, [products, selectedCategory, searchTerm])
 
-  const { subtotal, totalDiscountAmount, totalFeesAmount, taxAmount, total } = useMemo(() => {
-    return calculateTotal(cart, settings.taxRate, additionalFees, totalOrderDiscountPercentage)
-  }, [cart, settings.taxRate, additionalFees, totalOrderDiscountPercentage])
+  const handleAddToCart = useCallback(
+    (product: Product) => {
+      setCart((prevCart) => {
+        const existingItem = prevCart.find((item) => item.id === product.id)
+        if (existingItem) {
+          return prevCart.map((item) => (item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item))
+        } else {
+          return [...prevCart, { ...product, quantity: 1 }]
+        }
+      })
+      playSuccessSound()
+    },
+    [playSuccessSound],
+  )
 
-  const handleAddToCart = (product: Product) => {
+  const handleUpdateQuantity = useCallback((productId: string, delta: number) => {
     setCart((prevCart) => {
-      const existingItem = prevCart.find((item) => item.id === product.id)
-      if (existingItem) {
-        return prevCart.map((item) => (item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item))
-      }
-      return [...prevCart, { ...product, quantity: 1 }]
+      return prevCart
+        .map((item) => {
+          if (item.id === productId) {
+            const newQuantity = item.quantity + delta
+            return newQuantity > 0 ? { ...item, quantity: newQuantity } : null
+          }
+          return item
+        })
+        .filter(Boolean) as CartItem[]
     })
-  }
+  }, [])
 
-  const handleQuantityChange = (productId: string, newQuantity: number) => {
-    setCart((prevCart) => {
-      if (newQuantity <= 0) {
-        return prevCart.filter((item) => item.id !== productId)
-      }
-      return prevCart.map((item) => (item.id === productId ? { ...item, quantity: newQuantity } : item))
-    })
-  }
-
-  const handleRemoveFromCart = (productId: string) => {
+  const handleRemoveFromCart = useCallback((productId: string) => {
     setCart((prevCart) => prevCart.filter((item) => item.id !== productId))
-  }
+  }, [])
 
-  const handleClearCart = () => {
+  const handleClearCart = useCallback(() => {
     setCart([])
-    setSelectedCustomer(null)
+    setSelectedCustomer(customers.find((c) => c.name === "Guest") || defaultCustomers[0])
+    setOrderNotes("")
+    setOrderFees([])
     setTotalOrderDiscountPercentage(0)
-    setAdditionalFees([])
-  }
+    setShippingDetails(null)
+  }, [customers])
 
-  const handleProductSaved = async (product: Product) => {
-    if (product.id) {
-      await dbOperations.updateProduct(product.id, product)
-      toast({ title: "Product Updated", description: `${product.name} has been updated.` })
-    } else {
-      await dbOperations.addProduct(product)
-      toast({ title: "Product Added", description: `${product.name} has been added.` })
-    }
-    refreshData()
-    setIsProductModalOpen(false)
-    setEditingProduct(null)
-  }
+  const handleProductSaved = useCallback(
+    async (product: Product) => {
+      if (products.some((p) => p.id === product.id)) {
+        // Update existing product
+        const { data, error } = await dbOperations.updateProduct(product)
+        if (error) {
+          console.error("Error updating product:", error)
+          toast({
+            title: "Error",
+            description: `Failed to update product: ${error.message}`,
+            variant: "destructive",
+          })
+        } else {
+          setProducts((prev) => prev.map((p) => (p.id === product.id ? data! : p)))
+          toast({
+            title: "Product Updated",
+            description: `${product.name} has been updated.`,
+          })
+        }
+      } else {
+        // Add new product
+        const { data, error } = await dbOperations.addProduct(product)
+        if (error) {
+          console.error("Error adding product:", error)
+          toast({
+            title: "Error",
+            description: `Failed to add product: ${error.message}`,
+            variant: "destructive",
+          })
+        } else {
+          setProducts((prev) => [...prev, data!])
+          toast({
+            title: "Product Added",
+            description: `${product.name} has been added.`,
+          })
+        }
+      }
+    },
+    [products, dbOperations],
+  )
 
-  const handleDeleteProduct = async (productId: string) => {
-    await dbOperations.deleteProduct(productId)
-    toast({ title: "Product Deleted", description: "Product has been removed." })
-    refreshData()
-    setIsProductModalOpen(false)
-    setEditingProduct(null)
-  }
+  const handleDeleteProduct = useCallback(
+    async (productIds: string[]) => {
+      const { error } = await dbOperations.deleteMultipleProducts(productIds)
+      if (error) {
+        console.error("Error deleting products:", error)
+        toast({
+          title: "Error",
+          description: `Failed to delete products: ${error.message}`,
+          variant: "destructive",
+        })
+      } else {
+        setProducts((prev) => prev.filter((p) => !productIds.includes(p.id)))
+        setCart((prev) => prev.filter((item) => !productIds.includes(item.id))) // Also remove from cart if deleted
+        toast({
+          title: "Products Deleted",
+          description: `${productIds.length} product(s) have been removed.`,
+          variant: "destructive", // Red notification for deletion
+        })
+        const deleteAudio = document.getElementById("delete-sound") as HTMLAudioElement
+        deleteAudio?.play().catch(() => {})
+      }
+    },
+    [dbOperations],
+  )
 
-  const handleAddCategory = async (categoryName: string) => {
-    const { data, error } = await dbOperations.addCategory(categoryName)
-    if (error) {
-      toast({ title: "Error", description: `Failed to add category: ${error.message}`, variant: "destructive" })
-    } else {
-      toast({ title: "Category Added", description: `${categoryName} has been added.` })
-      refreshData()
-    }
-  }
+  const handleAddCategory = useCallback(
+    async (newCategory: string) => {
+      const { error } = await dbOperations.addCategory({ name: newCategory })
+      if (error) {
+        console.error("Error adding category:", error)
+        toast({
+          title: "Error",
+          description: `Failed to add category: ${error.message}`,
+          variant: "destructive",
+        })
+      } else {
+        setCategories((prev) => [...prev, newCategory])
+        toast({
+          title: "Category Added",
+          description: `${newCategory} has been added.`,
+        })
+      }
+    },
+    [dbOperations],
+  )
 
-  const handleCustomerSelected = (customer: Customer) => {
-    setSelectedCustomer(customer)
-    setIsCustomerModalOpen(false)
-    toast({ title: "Customer Selected", description: `${customer.name} has been added to the order.` })
-  }
+  const handleCustomerSaved = useCallback(
+    async (customer: Customer) => {
+      if (customers.some((c) => c.id === customer.id)) {
+        // Update existing customer
+        const { data, error } = await dbOperations.updateCustomer(customer)
+        if (error) {
+          console.error("Error updating customer:", error)
+          toast({
+            title: "Error",
+            description: `Failed to update customer: ${error.message}`,
+            variant: "destructive",
+          })
+        } else {
+          setCustomers((prev) => prev.map((c) => (c.id === customer.id ? data! : c)))
+          setSelectedCustomer(data)
+          toast({
+            title: "Customer Updated",
+            description: `${customer.name} has been updated.`,
+          })
+        }
+      } else {
+        // Add new customer
+        const { data, error } = await dbOperations.addCustomer(customer)
+        if (error) {
+          console.error("Error adding customer:", error)
+          toast({
+            title: "Error",
+            description: `Failed to add customer: ${error.message}`,
+            variant: "destructive",
+          })
+        } else {
+          setCustomers((prev) => [...prev, data!])
+          setSelectedCustomer(data)
+          toast({
+            title: "Customer Added",
+            description: `${customer.name} has been added.`,
+          })
+        }
+      }
+    },
+    [customers, dbOperations],
+  )
 
-  const handleProcessPayment = async (
-    paymentMethod: string,
-    amountPaid: number,
-    changeDue: number,
-    shippingDetails?: { address: string; cost: number; provider?: DeliveryProvider; city?: string },
-  ) => {
-    if (cart.length === 0) {
-      toast({ title: "Error", description: "Cart is empty.", variant: "destructive" })
-      return
-    }
+  const handleDeleteCustomer = useCallback(
+    async (customerId: string) => {
+      const { error } = await dbOperations.deleteCustomer(customerId)
+      if (error) {
+        console.error("Error deleting customer:", error)
+        toast({
+          title: "Error",
+          description: `Failed to delete customer: ${error.message}`,
+          variant: "destructive",
+        })
+      } else {
+        setCustomers((prev) => prev.filter((c) => c.id !== customerId))
+        if (selectedCustomer?.id === customerId) {
+          setSelectedCustomer(customers.find((c) => c.name === "Guest") || defaultCustomers[0])
+        }
+        toast({
+          title: "Customer Deleted",
+          description: "Customer has been removed.",
+        })
+      }
+    },
+    [dbOperations, selectedCustomer, customers],
+  )
 
-    const orderItemsForDb: Omit<OrderItem, "id" | "order_id">[] = cart.map((item) => ({
-      product_id: item.id,
-      quantity: item.quantity,
-      price: item.price,
-      discount: item.discount || 0,
-      name: item.name, // Ensure name is included for denormalization
-    }))
-
-    const itemsSummary = cart.map((item) => ({
-      product_id: item.id,
-      name: item.name,
-      quantity: item.quantity,
-      price: item.price,
-      discount: item.discount || 0,
-    }))
-
-    const customerName = selectedCustomer?.name || "Guest"
-    const customerId = selectedCustomer?.id || null
-
-    const newOrderData = {
-      customer_id: customerId,
-      customer_name: customerName,
-      total: total || 0,
-      total_amount: total || 0,
-      subtotal: subtotal || 0,
-      tax_amount: taxAmount || 0,
-      total_discount: totalDiscountAmount || 0,
-      total_fees: totalFeesAmount || 0,
-      payment_method: paymentMethod || "cash",
-      amount_paid: amountPaid || 0,
-      change_due: changeDue || 0,
-      status: "pending",
-      shipping_address: shippingDetails?.address || null,
-      shipping_cost: shippingDetails?.cost || 0,
-      delivery_provider_id: shippingDetails?.provider?.id || null,
-      delivery_provider_name: shippingDetails?.provider?.name || null,
-      shipping_city: shippingDetails?.city || null,
-      order_type: shippingDetails ? "delivery" : "retail",
-      payment_status: settings.paymentMethods?.find((pm) => pm.id === paymentMethod)?.isPaid ? "paid" : "unpaid",
-      voided_at: null,
-      refunded_at: null,
-      refund_reason: null,
-      cash_drawer_start_amount: currentCashInDrawer || 0,
-      cash_drawer_end_amount: (currentCashInDrawer || 0) + (amountPaid || 0) - (changeDue || 0),
-      cash_in_amount: (amountPaid || 0) - (changeDue || 0),
-      cash_out_amount: 0,
-      z_report_printed_at: null,
-      notes: null,
-      items: itemsSummary,
-      store_id: "00000000-0000-0000-0000-000000000001", // Dummy store ID for now
-    } as Omit<Order, "id" | "created_at" | "order_items"> & { items: unknown[] }
-
-    const response = await fetch("/api/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        order: newOrderData,
-        items: orderItemsForDb,
-      }),
-    })
-
-    const resJson = await response.json()
-    if (!response.ok) {
+  const handleApplyItemDiscount = useCallback(
+    (productId: string, discount: number) => {
+      setCart((prevCart) => prevCart.map((item) => (item.id === productId ? { ...item, discount: discount } : item)))
       toast({
-        title: "Payment Failed",
-        description: `Error: ${resJson.error}`,
-        variant: "destructive",
+        title: "Discount Applied",
+        description: `Discount of ${formatCurrency(discount, settings.currencySymbol, settings.decimalPlaces)} applied to item.`,
       })
-      return
-    }
+    },
+    [settings.currencySymbol, settings.decimalPlaces],
+  )
 
+  const handleApplyTotalDiscount = useCallback((discountPercentage: number) => {
+    setTotalOrderDiscountPercentage(discountPercentage)
     toast({
-      title: "Payment Successful",
-      description: `Order ${resJson.orderId.substring(0, 8)}… created as PENDING.`,
+      title: "Total Discount Applied",
+      description: `${discountPercentage}% discount applied to the total order.`,
     })
-    setCurrentCashInDrawer((prev) => (prev || 0) + (amountPaid || 0) - (changeDue || 0))
+  }, [])
 
-    const printableOrder = {
-      ...newOrderData,
-      id: resJson.orderId,
-      created_at: new Date().toISOString(),
-      order_items: cart.map((item) => ({
+  const handleSaveFees = useCallback((fees: { description: string; amount: number }[]) => {
+    setOrderFees(fees)
+    toast({
+      title: "Fees Updated",
+      description: "Additional fees have been applied to the order.",
+    })
+  }, [])
+
+  const handleSaveNotes = useCallback((notes: string) => {
+    setOrderNotes(notes)
+    toast({
+      title: "Notes Updated",
+      description: "Order notes have been saved.",
+    })
+  }, [])
+
+  const handleSaveShipping = useCallback((details: { address: string; cost: number; provider?: DeliveryProvider }) => {
+    setShippingDetails(details)
+    toast({
+      title: "Shipping Details Saved",
+      description: "Shipping information has been added to the order.",
+    })
+  }, [])
+
+  const handleProcessPayment = useCallback(
+    async (
+      paymentMethod: string,
+      amountPaid: number,
+      changeDue: number,
+      shippingDetails?: { address: string; cost: number; provider?: DeliveryProvider },
+    ) => {
+      if (cart.length === 0) {
+        toast({
+          title: "Cart is Empty",
+          description: "Please add items to the cart before processing payment.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const newOrder: Omit<Order, "created_at"> = {
+        id: `order-${Date.now()}`,
+        customer_id: selectedCustomer?.id || null,
+        customer_name: selectedCustomer?.name || null,
+        total_amount: total,
+        total_discount: totalDiscountAmount,
+        total_fees: totalFeesAmount,
+        amount_paid: amountPaid,
+        change_due: changeDue,
+        payment_method: paymentMethod,
+        status: "completed",
+        notes: orderNotes || null,
+        shipping_address: shippingDetails?.address || null,
+        shipping_cost: shippingDetails?.cost || 0,
+        delivery_provider_id: shippingDetails?.provider?.id || null,
+        delivery_provider_name: shippingDetails?.provider?.name || null,
+        order_type: shippingDetails?.address ? "delivery" : "retail", // Determine order type
+        payment_status: "paid",
+        voided_at: null,
+        refunded_at: null,
+        refund_reason: null,
+        cash_drawer_start_amount: null, // These will be updated by cash management
+        cash_drawer_end_amount: null,
+        cash_in_amount: null,
+        cash_out_amount: null,
+        z_report_printed_at: null,
+      }
+
+      const orderItemsToSave: Omit<OrderItem, "id" | "order_id">[] = cart.map((item) => ({
         product_id: item.id,
-        name: item.name,
-        price: item.price,
         quantity: item.quantity,
+        price: item.price,
         discount: item.discount || 0,
-        id: crypto.randomUUID(), // Dummy ID for printable order item
-        order_id: resJson.orderId, // Link to the new order ID
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })),
-    } as Order // Cast to Order type for print functions
+      }))
 
-    if (settings.receiptPrinterEnabled) {
-      await printReceipt(printableOrder, settings)
-    }
-    handleClearCart()
-    refreshData()
-  }
+      const { data: addedOrder, error } = await dbOperations.addOrder(newOrder, orderItemsToSave)
 
-  const handleVoidOrder = async (orderId: string) => {
-    const { error } = await dbOperations.updateOrderStatus(orderId, "voided")
-    if (error) {
-      toast({ title: "Error", description: `Failed to void order: ${error.message}`, variant: "destructive" })
-    } else {
-      toast({ title: "Order Voided", description: `Order ${orderId.substring(0, 8)}... has been voided.` })
-      refreshData()
-    }
-  }
+      if (error) {
+        console.error("Error processing payment:", error)
+        toast({
+          title: "Payment Failed",
+          description: `Error: ${error.message}`,
+          variant: "destructive",
+        })
+      } else {
+        setOrders((prev) => [addedOrder!, ...prev]) // Add new order to the top
+        toast({
+          title: "Payment Successful!",
+          description: `Order ${addedOrder?.id.substring(0, 8)}... completed. Change due: ${formatCurrency(changeDue, settings.currencySymbol, settings.decimalPlaces)}.`,
+        })
+        printReceipt({
+          ...addedOrder!,
+          order_items: cart,
+          ...settings,
+          subtotal,
+          taxAmount,
+          totalDiscount: totalDiscountAmount,
+          totalFees: totalFeesAmount,
+        })
+        handleClearCart()
+      }
+    },
+    [
+      cart,
+      selectedCustomer,
+      total,
+      totalDiscountAmount,
+      totalFeesAmount,
+      orderNotes,
+      dbOperations,
+      settings,
+      handleClearCart,
+    ],
+  )
 
-  const handleRefundOrder = async (
-    orderId: string,
-    refundAmount: number,
-    refundedItems: { itemId: string; quantity: number }[],
-  ) => {
-    const { error } = await dbOperations.updateOrderStatus(orderId, "refunded")
-    if (error) {
-      toast({ title: "Error", description: `Failed to refund order: ${error.message}`, variant: "destructive" })
-    } else {
+  const handleLoadOrder = useCallback(
+    async (order: Order) => {
+      const { data: items, error } = await dbOperations.getOrderItems(order.id)
+      if (error) {
+        console.error("Error loading order items:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load order items.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const cartItems: CartItem[] = items
+        ? items.map((item) => {
+            const product = products.find((p) => p.id === item.product_id)
+            return {
+              ...product!, // Assuming product will always be found
+              quantity: item.quantity,
+              discount: item.discount,
+            }
+          })
+        : []
+
+      setCart(cartItems)
+      setSelectedCustomer(customers.find((c) => c.id === order.customer_id) || null)
+      setOrderNotes(order.notes || "")
+      // Reconstruct fees and total discount if stored in order notes or a separate field
+      // For now, assuming they are not directly stored in order object for simplicity
+      setOrderFees([])
+      setTotalOrderDiscountPercentage(0)
+      setShippingDetails(
+        order.shipping_address
+          ? {
+              address: order.shipping_address,
+              cost: order.shipping_cost,
+              provider: deliveryProviders.find((dp) => dp.id === order.delivery_provider_id),
+            }
+          : null,
+      )
+
       toast({
-        title: "Order Refunded",
-        description: `Order ${orderId.substring(0, 8)}... has been refunded for ${formatCurrency(refundAmount, settings.currencySymbol, settings.decimalPlaces)}.`,
+        title: "Order Loaded",
+        description: `Order ${order.id.substring(0, 8)}... loaded into cart.`,
       })
-      refreshData()
-    }
-  }
+    },
+    [dbOperations, products, customers, deliveryProviders],
+  )
 
-  const handleBatchUpdateOrderStatus = async (orderIds: string[], status: Order["status"]) => {
-    const response = await fetch("/api/orders/batch-update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderIds, status }),
-    })
+  // Function to initiate void order confirmation
+  const initiateVoidOrder = useCallback((orderId: string) => {
+    setOrderToVoid(orderId)
+    setShowVoidConfirmationModal(true)
+  }, [])
 
-    const resJson = await response.json()
-    if (!response.ok) {
+  // Function to confirm and execute void order
+  const confirmVoidOrder = useCallback(async () => {
+    if (!orderToVoid) return
+
+    const { data, error } = await dbOperations.updateOrderStatus(orderToVoid, "voided", "voided_at")
+    if (error) {
+      console.error("Error voiding order:", error)
       toast({
-        title: "Status Update Failed",
-        description: `Error: ${resJson.error}`,
+        title: "Error",
+        description: `Failed to void order: ${error.message}`,
         variant: "destructive",
       })
     } else {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderToVoid ? { ...o, status: "voided", voided_at: data?.voided_at || null } : o)),
+      )
       toast({
-        title: "Status Updated",
-        description: `${resJson.updatedCount} orders marked as ${status}.`,
+        title: "Order Voided",
+        description: `Order ${orderToVoid.substring(0, 8)}... has been voided.`,
+        variant: "destructive", // Red notification for voided orders
       })
-      refreshData()
     }
-  }
+    setShowVoidConfirmationModal(false) // Close the confirmation modal
+    setOrderToVoid(null) // Clear the order to void
+  }, [dbOperations, orderToVoid])
 
-  const handleGenerateInvoice = async (order: Order) => {
-    if (!order.order_items || order.order_items.length === 0) {
+  const handleRefundOrder = useCallback(
+    (orderId: string) => {
+      const order = orders.find((o) => o.id === orderId)
+      if (order) {
+        setOrderToRefund(order)
+        setIsRefundModalOpen(true)
+      }
+    },
+    [orders],
+  )
+
+  const handleProcessRefund = useCallback(
+    async (orderId: string, refundAmount: number, reason: string) => {
+      const { data, error } = await dbOperations.refundOrder(orderId, refundAmount, reason)
+      if (error) {
+        console.error("Error processing refund:", error)
+        toast({
+          title: "Error",
+          description: `Failed to process refund: ${error.message}`,
+          variant: "destructive",
+        })
+      } else {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  status: "refunded",
+                  payment_status: "refunded", // Or 'partially_refunded'
+                  refunded_at: data?.refunded_at || null,
+                  refund_reason: data?.refund_reason || null,
+                  amount_paid: data?.amount_paid || o.amount_paid, // Update amount_paid after partial refund
+                }
+              : o,
+          ),
+        )
+        toast({
+          title: "Refund Processed",
+          description: `Refund of ${formatCurrency(refundAmount, settings.currencySymbol, settings.decimalPlaces)} processed for order ${orderId.substring(0, 8)}...`,
+        })
+      }
+    },
+    [dbOperations, settings.currencySymbol, settings.decimalPlaces],
+  )
+
+  const handleZReport = useCallback(
+    (data: { startAmount: number; endAmount: number; cashIn: number; cashOut: number }) => {
+      // In a real app, this would save the Z-report data to the database
+      console.log("Z-Report Data:", data)
+      setCurrentCashInDrawer(data.endAmount) // Update cash in drawer to end amount
       toast({
-        title: "Invoice Error",
-        description: "Order items not found for invoice generation.",
+        title: "Z-Report Generated",
+        description: "Z-Report data logged to console and cash drawer updated.",
+      })
+    },
+    [],
+  )
+
+  const handleCashIn = useCallback(
+    (amount: number) => {
+      setCurrentCashInDrawer((prev) => prev + amount)
+      toast({
+        title: "Cash In",
+        description: `${formatCurrency(amount, settings.currencySymbol, settings.decimalPlaces)} added to drawer.`,
+      })
+    },
+    [settings.currencySymbol, settings.decimalPlaces],
+  )
+
+  const handleCashOut = useCallback(
+    (amount: number) => {
+      setCurrentCashInDrawer((prev) => prev - amount)
+      toast({
+        title: "Cash Out",
+        description: `${formatCurrency(amount, settings.currencySymbol, settings.decimalPlaces)} removed from drawer.`,
+      })
+    },
+    [settings.currencySymbol, settings.decimalPlaces],
+  )
+
+  const handleScanResult = useCallback(
+    (scannedData: string) => {
+      const product = products.find((p) => p.sku === scannedData)
+      if (product) {
+        handleAddToCart(product)
+        toast({
+          title: "Product Added",
+          description: `${product.name} added to cart from QR scan.`,
+        })
+      } else {
+        toast({
+          title: "Product Not Found",
+          description: `No product found with SKU: ${scannedData}`,
+          variant: "destructive",
+        })
+      }
+    },
+    [products, handleAddToCart],
+  )
+
+  const handleViewQrCode = useCallback((product: Product) => {
+    setProductForQrCode(product)
+    setIsQrCodeModalOpen(true)
+  }, [])
+
+  // Placeholder for OpenSooq publishing logic
+  const handlePublishOpenSooq = async (product: Product) => {
+    if (!settings.openSooqPhoneNumber || !settings.openSooqPassword) {
+      toast({
+        title: "OpenSooq Configuration Missing",
+        description:
+          "OpenSooq login details (phone number or password) are missing in settings. Please configure them.",
         variant: "destructive",
       })
       return
     }
-    await printInvoice(order, settings)
-    toast({
-      title: "Invoice Generated",
-      description: `Invoice for Order ${order.id.substring(0, 8)}... has been generated.`,
-    })
-  }
 
-  const handleZReport = (data: { startAmount: number; endAmount: number; cashIn: number; cashOut: number }) => {
     toast({
-      title: "Z-Report Generated",
-      description: `Start: ${formatCurrency(data.startAmount, settings.currencySymbol, settings.decimalPlaces)}, End: ${formatCurrency(data.endAmount, settings.currencySymbol, settings.decimalPlaces)}, Cash In: ${formatCurrency(data.cashIn, settings.currencySymbol, settings.decimalPlaces)}, Cash Out: ${formatCurrency(data.cashOut, settings.currencySymbol, settings.decimalPlaces)}`,
+      title: "OpenSooq Publishing",
+      description: `Attempting to publish '${product.name}' to OpenSooq... (Simulated)`,
     })
-    setCurrentCashInDrawer(data.endAmount)
-  }
+    console.log(`[OpenSooq Publisher] Starting publish process for product: ${product.name}`)
+    console.log(
+      `[OpenSooq Publisher] Using phone: ${settings.openSooqPhoneNumber}, password: ${settings.openSooqPassword.replace(/./g, "*")}`,
+    )
+    console.log(`[OpenSooq Publisher] Auto repost timer set to: ${settings.openSooqRepostTimer} hours`)
 
-  const handleCashIn = (amount: number) => {
-    setCurrentCashInDrawer((prev) => (prev || 0) + amount)
-    toast({
-      title: "Cash In",
-      description: `${formatCurrency(amount, settings.currencySymbol, settings.decimalPlaces)} added to drawer.`,
-    })
-  }
+    try {
+      // Simulate various steps of publishing
+      await new Promise((resolve) => setTimeout(resolve, 1000)) // Simulate network delay
+      console.log("[OpenSooq Publisher] Simulated navigation and login.")
+      await new Promise((resolve) => setTimeout(resolve, 1500)) // Simulate login time
+      console.log("[OpenSooq Publisher] Simulated product details entry.")
+      await new Promise((resolve) => setTimeout(resolve, 2000)) // Simulate image upload and form submission
 
-  const handleCashOut = (amount: number) => {
-    setCurrentCashInDrawer((prev) => (prev || 0) - amount)
-    toast({
-      title: "Cash Out",
-      description: `${formatCurrency(amount, settings.currencySymbol, settings.decimalPlaces)} removed from drawer.`,
-    })
-  }
-
-  const handleScanResult = (sku: string) => {
-    const product = products.find((p) => p.sku === sku)
-    if (product) {
-      handleAddToCart(product)
-      toast({ title: "Product Scanned", description: `${product.name} added to cart.` })
-    } else {
-      toast({ title: "Product Not Found", description: `No product with SKU: ${sku}`, variant: "destructive" })
+      toast({
+        title: "OpenSooq Publishing Successful",
+        description: `Product '${product.name}' successfully published to OpenSooq (simulated)!`,
+      })
+    } catch (error) {
+      console.error("[OpenSooq Publisher] An error occurred during simulated publishing:", error)
+      toast({
+        title: "OpenSooq Publishing Failed",
+        description: "An error occurred during OpenSooq publishing (simulated). Please try again.",
+        variant: "destructive",
+      })
     }
-    setIsQrScannerModalOpen(false)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading POS System...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-950">
-      <div className="flex-1 flex flex-col p-4 space-y-4">
-        <Card className="flex-1 flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-2xl font-bold">Products</CardTitle>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setEditingProduct(null)
-                  setIsProductModalOpen(true)
-                }}
-              >
-                <Plus className="h-4 w-4 mr-2" /> Add Product
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setIsQrScannerModalOpen(true)}>
-                <ScanLine className="h-4 w-4 mr-2" /> Scan QR
-              </Button>
-            </div>
-          </CardHeader>
-          <div className="p-4 pt-0">
+    <div className="flex flex-col h-screen bg-background text-foreground">
+      {/* Hidden audio element for notifications */}
+      <audio ref={audioRef} src="https://www.soundjay.com/buttons/sounds/button-1.mp3" preload="auto" />
+      <audio
+        src="/sounds/delete-sound.mp3" // You'll need to provide this sound file
+        preload="auto"
+        id="delete-sound"
+      />
+
+      {/* Header */}
+      <header className="w-full bg-white border-b border-border px-6 py-3 flex items-center justify-between shadow-sm">
+        <div className="flex items-center space-x-4">
+          <h1 className="text-2xl font-bold text-gray-800">CosyPOS</h1>
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
-              placeholder="Search products..."
+              placeholder="What are you looking for?"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="mb-2"
+              className="pl-10 pr-4 py-2 rounded-full border border-input focus:ring-ring focus:border-ring"
             />
-            <Select value={selectedCategory || "All Categories"} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-[180px] mb-2">
-                <SelectValue placeholder="Select Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All Categories">All Categories</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.name}>
-                    {category.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
-          <CardContent className="flex-1 overflow-hidden">
-            <ScrollArea className="h-full pr-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredProducts.map((product) => (
-                  <Card
-                    key={product.id}
-                    className="cursor-pointer hover:shadow-lg transition-shadow"
-                    onClick={() => handleAddToCart(product)}
-                  >
-                    <CardContent className="p-3 flex flex-col items-center text-center">
-                      {/* Use placeholder.svg to avoid CORS issues with external blob URLs */}
-                      <img
-                        src={product.image && !product.image.startsWith("http") ? product.image : "/placeholder.svg"}
-                        alt={product.name}
-                        className="w-24 h-24 object-cover mb-2 rounded-md"
-                      />
-                      <p className="font-medium text-sm truncate w-full">{product.name}</p>
-                      <p className="text-muted-foreground text-xs">{product.sku}</p>
-                      <p className="font-bold text-lg">
-                        {formatCurrency(product.price, settings.currencySymbol, settings.decimalPlaces)}
-                      </p>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-2 w-full"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setEditingProduct(product)
-                          setIsProductModalOpen(true)
-                        }}
-                      >
-                        Edit
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      </div>
+        </div>
+        <nav className="flex items-center space-x-4">
+          <Button variant="ghost" className="text-gray-700 hover:bg-gray-100">
+            Front Register
+          </Button>
+          <Button
+            variant="ghost"
+            className="text-gray-700 hover:bg-gray-100 flex items-center gap-1"
+            onClick={() => setIsLoadModalOpen(true)}
+          >
+            <Cloud className="w-4 h-4" />
+            Load
+          </Button>
+          <Button
+            variant="ghost"
+            className="text-gray-700 hover:bg-gray-100 flex items-center gap-1"
+            onClick={() => setIsOrdersModalOpen(true)}
+          >
+            <ClipboardList className="w-4 h-4" />
+            Orders
+          </Button>
+          <Button
+            variant="ghost"
+            className="text-gray-700 hover:bg-gray-100 flex items-center gap-1"
+            onClick={() => setIsCashManagementModalOpen(true)}
+          >
+            <Wallet className="w-4 h-4" />
+            Cash Management
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="text-gray-700 hover:bg-gray-100">
+                <Settings className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 bg-white text-foreground border-border shadow-lg">
+              <DropdownMenuItem className="hover:bg-gray-100 cursor-pointer">
+                <Link href="/settings" className="flex items-center w-full text-gray-700">
+                  <Settings className="w-4 h-4 mr-2" /> App Settings
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="hover:bg-gray-100 cursor-pointer flex items-center gap-1">
+                <Wifi className={`w-4 h-4 ${dbOperations.isOnline ? "text-green-500" : "text-red-500"}`} />
+                {dbOperations.isOnline ? "Online" : "Offline"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="hover:bg-gray-100 cursor-pointer relative"
+                onClick={() => {
+                  /* Logic to open notifications */
+                }}
+              >
+                <Bell className="w-4 h-4 mr-2" /> Notifications
+                {/* Add notification badge if needed */}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Avatar className="w-8 h-8">
+            <AvatarImage src="/placeholder-user.jpg" />
+            <AvatarFallback>EH</AvatarFallback>
+          </Avatar>
+        </nav>
+      </header>
 
-      <div className="w-96 flex flex-col p-4 space-y-4 border-l bg-white dark:bg-gray-900">
-        <Card className="flex-1 flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-2xl font-bold">Cart</CardTitle>
-            <Button variant="outline" size="sm" onClick={handleClearCart} disabled={cart.length === 0}>
-              <Trash2 className="h-4 w-4 mr-2" /> Clear Cart
-            </Button>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-hidden">
-            <ScrollArea className="h-full pr-4">
-              {cart.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4">Cart is empty.</p>
-              ) : (
-                <div className="space-y-3">
-                  {cart.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between border p-3 rounded-md">
-                      <div className="flex-1">
-                        <p className="font-medium">{item.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatCurrency(item.price, settings.currencySymbol, settings.decimalPlaces)} x{" "}
-                          {item.quantity}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8 bg-transparent"
-                          onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                        >
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => handleQuantityChange(item.id, Number.parseInt(e.target.value))}
-                          className="w-16 text-center"
-                          min={1}
-                        />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8 bg-transparent"
-                          onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-medium">Customer:</span>
-              <Button variant="outline" size="sm" onClick={() => setIsCustomerModalOpen(true)}>
-                <User className="h-4 w-4 mr-2" /> {selectedCustomer ? selectedCustomer.name : "Guest"}
+      {/* Main Content Area */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Panel: Product List */}
+        <div className="w-2/3 p-6 flex flex-col bg-white border-r border-border">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-800">Products</h2>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setIsProductModalOpen(true)}
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <Plus className="w-4 h-4 mr-2" /> Manage Products
+              </Button>
+              <Button
+                onClick={() => setIsQrScannerModalOpen(true)}
+                variant="outline"
+                className="border-input bg-background hover:bg-accent text-foreground"
+              >
+                <QrCode className="w-4 h-4 mr-2" /> Scan Product
               </Button>
             </div>
-            {selectedCustomer && selectedCustomer.name !== "Guest" && (
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>Email: {selectedCustomer.email}</span>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedCustomer(null)}>
-                  <X className="h-4 w-4" /> Remove
-                </Button>
+          </div>
+
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+            <Button
+              variant={selectedCategory === null ? "default" : "outline"}
+              onClick={() => setSelectedCategory(null)}
+              className={
+                selectedCategory === null
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "border-input bg-background hover:bg-accent text-foreground"
+              }
+            >
+              All
+            </Button>
+            {categories.map((category) => (
+              <Button
+                key={category}
+                variant={selectedCategory === category ? "default" : "outline"}
+                onClick={() => setSelectedCategory(category)}
+                className={
+                  selectedCategory === category
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "border-input bg-background hover:bg-accent text-foreground"
+                }
+              >
+                {category}
+              </Button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 overflow-y-auto pr-2">
+            {filteredProducts.map((product) => (
+              <Card
+                key={product.id}
+                className="cursor-pointer hover:shadow-md transition-shadow border border-border bg-card text-card-foreground"
+                onClick={() => handleAddToCart(product)}
+              >
+                <CardContent className="flex flex-col items-center justify-center p-4 h-36">
+                  <span className="text-4xl mb-2">{product.image}</span>
+                  <span className="text-sm font-medium text-center">{product.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatCurrency(product.price, settings.currencySymbol, settings.decimalPlaces)}
+                  </span>
+                  {settings.openSooqEnabled && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 w-full flex items-center justify-center gap-1 text-blue-600 hover:bg-blue-50"
+                      onClick={(e) => {
+                        e.stopPropagation() // Prevent adding to cart when clicking this button
+                        handlePublishOpenSooq(product)
+                      }}
+                    >
+                      <Share2 className="w-3 h-3" />
+                      Publish OS
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* Right Panel: Cart and Order Summary */}
+        <div className="w-1/3 p-6 flex flex-col bg-white">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-800">Cart</h2>
+            <Button onClick={handleClearCart} variant="destructive" size="sm">
+              <Trash2 className="w-4 h-4 mr-2" /> Clear Cart
+            </Button>
+          </div>
+
+          {/* Customer Section */}
+          <div className="mb-4 p-3 bg-muted rounded-md border border-border">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-lg font-semibold text-foreground">Customer</h3>
+              <Button
+                onClick={() => setIsCustomerModalOpen(true)}
+                variant="outline"
+                size="sm"
+                className="border-input bg-background hover:bg-accent text-foreground"
+              >
+                <Users className="w-4 h-4 mr-1" /> {selectedCustomer ? "Change" : "Select"}
+              </Button>
+            </div>
+            {selectedCustomer ? (
+              <div className="text-muted-foreground">
+                <p className="font-medium">{selectedCustomer.name}</p>
+                <p className="text-sm">{selectedCustomer.phone}</p>
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-sm">No customer selected.</p>
+            )}
+          </div>
+
+          {/* Cart Items */}
+          <div className="flex-1 overflow-y-auto pr-2 mb-4 space-y-3">
+            {cart.length === 0 ? (
+              <p className="text-center text-muted-foreground mt-10">Your cart is empty.</p>
+            ) : (
+              cart.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between bg-card p-3 rounded-md border border-border"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{item.image}</span>
+                    <div>
+                      <div className="font-medium text-foreground">{item.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {formatCurrency(item.price, settings.currencySymbol, settings.decimalPlaces)}
+                        {item.discount && item.discount > 0 && (
+                          <span className="text-destructive ml-2">
+                            (-{formatCurrency(item.discount, settings.currencySymbol, settings.decimalPlaces)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleUpdateQuantity(item.id, -1)}
+                      className="w-8 h-8 border-input bg-background hover:bg-accent text-foreground"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </Button>
+                    <span className="font-medium text-foreground">{item.quantity}</span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleUpdateQuantity(item.id, 1)}
+                      className="w-8 h-8 border-input bg-background hover:bg-accent text-foreground"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Order Summary */}
+          <div className="bg-muted p-4 rounded-md border border-border space-y-2 mb-4">
+            <div className="flex justify-between text-sm text-muted-foreground">
+              <span>Subtotal:</span>
+              <span>
+                {formatCurrency(subtotal + totalDiscountAmount, settings.currencySymbol, settings.decimalPlaces)}
+              </span>
+            </div>
+            {totalDiscountAmount > 0 && (
+              <div className="flex justify-between text-sm text-destructive">
+                <span>Discount ({totalOrderDiscountPercentage}%):</span>
+                <span>-{formatCurrency(totalDiscountAmount, settings.currencySymbol, settings.decimalPlaces)}</span>
               </div>
             )}
-
-            <div className="space-y-1">
-              <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span>{formatCurrency(subtotal, settings.currencySymbol, settings.decimalPlaces)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Discount:</span>
-                <span>
-                  -{formatCurrency(totalDiscountAmount, settings.currencySymbol, settings.decimalPlaces)} (
-                  {totalOrderDiscountPercentage}%)
-                </span>
-              </div>
-              <div className="flex justify-between">
+            {orderFees.length > 0 && (
+              <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Fees:</span>
-                <span>+{formatCurrency(totalFeesAmount, settings.currencySymbol, settings.decimalPlaces)}</span>
+                <span>{formatCurrency(totalFeesAmount, settings.currencySymbol, settings.decimalPlaces)}</span>
               </div>
-              <div className="flex justify-between">
+            )}
+            {settings.taxRate > 0 && (
+              <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Tax ({settings.taxRate * 100}%):</span>
-                <span>+{formatCurrency(taxAmount, settings.currencySymbol, settings.decimalPlaces)}</span>
+                <span>{formatCurrency(taxAmount, settings.currencySymbol, settings.decimalPlaces)}</span>
               </div>
-              <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
-                <span>Total:</span>
-                <span>{formatCurrency(total, settings.currencySymbol, settings.decimalPlaces)}</span>
+            )}
+            {settings.shipping.enabled && shippingDetails && (
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Shipping:</span>
+                <span>{formatCurrency(shippingDetails.cost, settings.currencySymbol, settings.decimalPlaces)}</span>
               </div>
+            )}
+            <div className="flex justify-between font-bold text-xl text-foreground border-t border-border pt-2">
+              <span>Total:</span>
+              <span>
+                {formatCurrency(total + (shippingDetails?.cost || 0), settings.currencySymbol, settings.decimalPlaces)}
+              </span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" onClick={() => setIsDiscountModalOpen(true)}>
-            <Percent className="h-4 w-4 mr-2" /> Discount
-          </Button>
-          <Button variant="outline" onClick={() => setIsFeeModalOpen(true)}>
-            <Tag className="h-4 w-4 mr-2" /> Fees
-          </Button>
-          <Button variant="outline" onClick={() => setIsOrdersModalOpen(true)}>
-            <ClipboardList className="h-4 w-4 mr-2" /> Orders
-          </Button>
-          <Button variant="outline" onClick={() => setIsCashManagementModalOpen(true)}>
-            <Wallet className="h-4 w-4 mr-2" /> Cash Mgmt
-          </Button>
+          {/* Action Buttons */}
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <Button
+              onClick={() => setIsDiscountModalOpen(true)}
+              variant="outline"
+              className="border-input bg-background hover:bg-accent text-foreground"
+            >
+              <Percent className="w-4 h-4 mr-2" /> Discount
+            </Button>
+            <Button
+              onClick={() => setIsFeeModalOpen(true)}
+              variant="outline"
+              className="border-input bg-background hover:bg-accent text-foreground"
+            >
+              <Tag className="w-4 h-4 mr-2" /> Fees
+            </Button>
+            <Button
+              onClick={() => setIsNoteModalOpen(true)}
+              variant="outline"
+              className="border-input bg-background hover:bg-accent text-foreground"
+            >
+              <FileText className="w-4 h-4 mr-2" /> Note
+            </Button>
+            {settings.shipping.enabled && (
+              <Button
+                onClick={() => setIsShippingModalOpen(true)}
+                variant="outline"
+                className="border-input bg-background hover:bg-accent text-foreground col-span-3"
+              >
+                <Truck className="w-4 h-4 mr-2" /> Shipping
+              </Button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              onClick={() => setIsLoadModalOpen(true)}
+              variant="outline"
+              className="border-input bg-background hover:bg-accent text-foreground"
+            >
+              <Receipt className="w-4 h-4 mr-2" /> Load Order
+            </Button>
+            <Button
+              onClick={() => setIsOrdersModalOpen(true)}
+              variant="outline"
+              className="border-input bg-background hover:bg-accent text-foreground"
+            >
+              <ClipboardList className="w-4 h-4 mr-2" /> Orders
+            </Button>
+            <Button
+              onClick={() => setIsCashManagementModalOpen(true)}
+              variant="outline"
+              className="border-input bg-background hover:bg-accent text-foreground col-span-2"
+            >
+              <Wallet className="w-4 h-4 mr-2" /> Cash Management
+            </Button>
+            <Button
+              onClick={() => setIsPaymentModalOpen(true)}
+              className="col-span-2 bg-primary hover:bg-primary/90 text-primary-foreground py-3 text-lg"
+              disabled={cart.length === 0}
+            >
+              <DollarSign className="w-5 h-5 mr-2" /> Process Payment
+            </Button>
+          </div>
         </div>
-        <Button
-          size="lg"
-          className="w-full py-6 text-lg"
-          onClick={() => setIsPaymentModalOpen(true)}
-          disabled={cart.length === 0}
-        >
-          <DollarSign className="h-6 w-6 mr-2" /> Process Payment
-        </Button>
       </div>
 
+      {/* Modals */}
       <ProductModal
         isOpen={isProductModalOpen}
-        onClose={() => {
-          setIsProductModalOpen(false)
-          setEditingProduct(null)
-        }}
+        onClose={() => setIsProductModalOpen(false)}
+        products={products}
         onProductSaved={handleProductSaved}
         onDeleteProduct={handleDeleteProduct}
-        product={editingProduct}
         categories={categories}
         onAddCategory={handleAddCategory}
+        onViewQrCode={handleViewQrCode}
+        settings={settings}
       />
       <CustomerModal
         isOpen={isCustomerModalOpen}
         onClose={() => setIsCustomerModalOpen(false)}
-        onCustomerSelected={handleCustomerSelected}
         customers={customers}
-        onCustomerSaved={async (customer) => {
-          if (customer.id) {
-            await dbOperations.updateCustomer(customer.id, customer)
-            toast({ title: "Customer Updated", description: `${customer.name} has been updated.` })
-          } else {
-            await dbOperations.addCustomer(customer)
-            toast({ title: "Customer Added", description: `${customer.name} has been added.` })
-          }
-          refreshData()
-          setIsCustomerModalOpen(false)
-        }}
+        selectedCustomer={selectedCustomer}
+        onSelectCustomer={setSelectedCustomer}
+        onCustomerSaved={handleCustomerSaved}
+        onDeleteCustomer={handleDeleteCustomer}
       />
       <DiscountModal
         isOpen={isDiscountModalOpen}
         onClose={() => setIsDiscountModalOpen(false)}
-        currentDiscountPercentage={totalOrderDiscountPercentage}
-        onApplyDiscount={setTotalOrderDiscountPercentage}
-        totalAmount={total}
+        cartItems={cart}
+        onApplyItemDiscount={handleApplyItemDiscount}
+        onApplyTotalDiscount={handleApplyTotalDiscount}
+        totalDiscountPercentage={totalOrderDiscountPercentage}
       />
       <FeeModal
         isOpen={isFeeModalOpen}
         onClose={() => setIsFeeModalOpen(false)}
-        currentFees={additionalFees}
-        onApplyFees={setAdditionalFees}
+        currentFees={orderFees}
+        onSaveFees={handleSaveFees}
+        settings={settings}
+      />
+      <NoteModal
+        isOpen={isNoteModalOpen}
+        onClose={() => setIsNoteModalOpen(false)}
+        currentNote={orderNotes}
+        onSaveNote={handleSaveNotes}
       />
       <PaymentModal
         isOpen={isPaymentModalOpen}
@@ -640,39 +1228,25 @@ export default function POSPage() {
         totalAmount={total}
         onProcessPayment={handleProcessPayment}
         shippingEnabled={settings.shipping.enabled}
-        shippingDetails={null}
+        shippingDetails={shippingDetails}
         deliveryProviders={deliveryProviders}
         customer={selectedCustomer}
       />
-      <OrdersModal
-        isOpen={isOrdersModalOpen}
-        onClose={() => setIsOrdersModalOpen(false)}
+      <LoadModal
+        isOpen={isLoadModalOpen}
+        onClose={() => setIsLoadModalOpen(false)}
         orders={orders}
-        onVoidOrder={handleVoidOrder}
-        onRefundOrder={(orderId) => {
-          const orderToRefund = orders.find((o) => o.id === orderId)
-          if (orderToRefund) {
-            setRefundOrder(orderToRefund)
-            setIsRefundModalOpen(true)
-          } else {
-            toast({ title: "Error", description: "Order not found for refund.", variant: "destructive" })
-          }
-        }}
-        onBatchUpdateStatus={handleBatchUpdateOrderStatus}
-        onGenerateInvoice={handleGenerateInvoice}
+        onLoadOrder={handleLoadOrder}
+        onDeleteOrder={dbOperations.deleteOrder}
+        settings={settings}
       />
-      {refundOrder && (
-        <RefundModal
-          isOpen={isRefundModalOpen}
-          onClose={() => {
-            setIsRefundModalOpen(false)
-            setRefundOrder(null)
-          }}
-          orderId={refundOrder.id}
-          orderItems={refundOrder.order_items || []}
-          onProcessRefund={handleRefundOrder}
-        />
-      )}
+      <RefundModal
+        isOpen={isRefundModalOpen}
+        onClose={() => setIsRefundModalOpen(false)}
+        order={orderToRefund}
+        onRefundOrder={handleProcessRefund}
+        settings={settings}
+      />
       <CashManagementModal
         isOpen={isCashManagementModalOpen}
         onClose={() => setIsCashManagementModalOpen(false)}
@@ -680,12 +1254,53 @@ export default function POSPage() {
         onCashIn={handleCashIn}
         onCashOut={handleCashOut}
         currentCashInDrawer={currentCashInDrawer}
+        settings={settings}
       />
       <QrScannerModal
         isOpen={isQrScannerModalOpen}
         onClose={() => setIsQrScannerModalOpen(false)}
-        onScanResult={handleScanResult}
+        onScan={handleScanResult}
       />
+      <QrCodeModal
+        isOpen={isQrCodeModalOpen}
+        onClose={() => setIsQrCodeModalOpen(false)}
+        product={productForQrCode}
+        settings={settings}
+      />
+      <ShippingModal
+        isOpen={isShippingModalOpen}
+        onClose={() => setIsShippingModalOpen(false)}
+        currentShippingDetails={shippingDetails}
+        deliveryProviders={deliveryProviders}
+        onSaveShipping={handleSaveShipping}
+        settings={settings}
+      />
+      <OrdersModal
+        isOpen={isOrdersModalOpen}
+        onClose={() => setIsOrdersModalOpen(false)}
+        orders={orders}
+        onVoidOrder={initiateVoidOrder} // Use the new initiateVoidOrder
+        onRefundOrder={handleRefundOrder}
+        settings={settings}
+      />
+
+      {/* Void Confirmation Modal */}
+      <Dialog open={showVoidConfirmationModal} onOpenChange={setShowVoidConfirmationModal}>
+        <DialogContent className="sm:max-w-[425px] bg-white text-foreground">
+          <DialogHeader>
+            <DialogTitle>Confirm Void Order</DialogTitle>
+            <DialogDescription>Are you sure you want to void the current order?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowVoidConfirmationModal(false)}>
+              No
+            </Button>
+            <Button variant="destructive" onClick={confirmVoidOrder}>
+              Yes, Void
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

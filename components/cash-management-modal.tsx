@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -10,11 +9,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatCurrency } from "@/lib/utils"
-import { useSettings } from "@/lib/settings-context"
-import { toast } from "@/hooks/use-toast"
+import type { Settings } from "@/lib/settings-context"
 
 interface CashManagementModalProps {
   isOpen: boolean
@@ -23,6 +23,7 @@ interface CashManagementModalProps {
   onCashIn: (amount: number) => void
   onCashOut: (amount: number) => void
   currentCashInDrawer: number
+  settings: Settings // Add settings prop
 }
 
 export function CashManagementModal({
@@ -32,146 +33,155 @@ export function CashManagementModal({
   onCashIn,
   onCashOut,
   currentCashInDrawer,
+  settings,
 }: CashManagementModalProps) {
-  const { settings } = useSettings()
-  const [cashInAmount, setCashInAmount] = useState("")
-  const [cashOutAmount, setCashOutAmount] = useState("")
-  const [startOfDayCash, setStartOfDayCash] = useState(currentCashInDrawer) // This would ideally come from a persistent store
+  const [zReportStartAmount, setZReportStartAmount] = useState(0)
+  const [zReportEndAmount, setZReportEndAmount] = useState(0)
+  const [zReportCashIn, setZReportCashIn] = useState(0)
+  const [zReportCashOut, setZReportCashOut] = useState(0)
+
+  const [cashInAmount, setCashInAmount] = useState(0)
+  const [cashOutAmount, setCashOutAmount] = useState(0)
 
   useEffect(() => {
-    if (!isOpen) {
-      setCashInAmount("")
-      setCashOutAmount("")
-    } else {
-      // When opening, if it's the first time or a new day, set start of day cash
-      // For this demo, we'll just use the current drawer amount as start of day if not set
-      if (startOfDayCash === 0 && currentCashInDrawer > 0) {
-        setStartOfDayCash(currentCashInDrawer)
-      }
+    if (isOpen) {
+      // Reset Z-report fields and set current cash as start amount
+      setZReportStartAmount(currentCashInDrawer)
+      setZReportEndAmount(currentCashInDrawer) // Initially same as start
+      setZReportCashIn(0)
+      setZReportCashOut(0)
+      setCashInAmount(0)
+      setCashOutAmount(0)
     }
-  }, [isOpen, currentCashInDrawer, startOfDayCash])
+  }, [isOpen, currentCashInDrawer])
 
-  const handleCashIn = () => {
-    const amount = Number.parseFloat(cashInAmount)
-    if (isNaN(amount) || amount <= 0) {
-      toast({
-        title: "Invalid Amount",
-        description: "Please enter a positive number for cash in.",
-        variant: "destructive",
-      })
-      return
-    }
-    onCashIn(amount)
-    setCashInAmount("")
-    toast({
-      title: "Cash In Successful",
-      description: `${formatCurrency(amount, settings.currencySymbol, settings.decimalPlaces)} added to drawer.`,
-    })
-  }
-
-  const handleCashOut = () => {
-    const amount = Number.parseFloat(cashOutAmount)
-    if (isNaN(amount) || amount <= 0) {
-      toast({
-        title: "Invalid Amount",
-        description: "Please enter a positive number for cash out.",
-        variant: "destructive",
-      })
-      return
-    }
-    if (amount > currentCashInDrawer) {
-      toast({
-        title: "Insufficient Funds",
-        description: "Cannot cash out more than available in drawer.",
-        variant: "destructive",
-      })
-      return
-    }
-    onCashOut(amount)
-    setCashOutAmount("")
-    toast({
-      title: "Cash Out Successful",
-      description: `${formatCurrency(amount, settings.currencySymbol, settings.decimalPlaces)} removed from drawer.`,
-    })
-  }
-
-  const handleZReport = () => {
-    // In a real system, you'd fetch all transactions for the day
-    // and calculate total cash in/out from those.
-    // For this demo, we'll use the current state.
-    const endAmount = currentCashInDrawer
-    const cashInTotal = currentCashInDrawer - startOfDayCash // Simplified
-    const cashOutTotal = 0 // Simplified, assuming cash out is only manual
+  const handleZReportGenerate = () => {
     onZReport({
-      startAmount: startOfDayCash,
-      endAmount: endAmount,
-      cashIn: cashInTotal,
-      cashOut: cashOutTotal,
+      startAmount: zReportStartAmount,
+      endAmount: currentCashInDrawer, // End amount is the current actual cash in drawer
+      cashIn: zReportCashIn,
+      cashOut: zReportCashOut,
     })
-    toast({ title: "Z-Report Generated", description: "Z-Report details logged to console." })
-    // Reset start of day cash for next day (or next report)
-    setStartOfDayCash(currentCashInDrawer)
     onClose()
+  }
+
+  const handleCashInSubmit = () => {
+    if (cashInAmount > 0) {
+      onCashIn(cashInAmount)
+      setZReportCashIn((prev) => prev + cashInAmount)
+      setCashInAmount(0)
+    }
+  }
+
+  const handleCashOutSubmit = () => {
+    if (cashOutAmount > 0) {
+      onCashOut(cashOutAmount)
+      setZReportCashOut((prev) => prev + cashOutAmount)
+      setCashOutAmount(0)
+    }
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[475px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Cash Management</DialogTitle>
-          <DialogDescription>Manage cash drawer operations and generate reports.</DialogDescription>
+          <DialogDescription>Manage cash drawer operations and generate Z-reports.</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="flex justify-between items-center text-lg font-bold">
-            <span>Current Cash in Drawer:</span>
-            <span>{formatCurrency(currentCashInDrawer, settings.currencySymbol, settings.decimalPlaces)}</span>
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="cashInAmount">Cash In</Label>
-            <div className="flex gap-2">
-              <Input
-                id="cashInAmount"
-                type="number"
-                value={cashInAmount}
-                onChange={(e) => setCashInAmount(e.target.value)}
-                placeholder="Amount to add"
-                min="0"
-                step="0.01"
-              />
-              <Button onClick={handleCashIn}>Add Cash</Button>
+        <Tabs defaultValue="cash-in-out" className="flex-1 flex flex-col">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="cash-in-out">Cash In/Out</TabsTrigger>
+            <TabsTrigger value="z-report">Z-Report</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="cash-in-out" className="flex-1 flex flex-col p-4">
+            <div className="space-y-4">
+              <div className="text-lg font-semibold">
+                Current Cash in Drawer:{" "}
+                {formatCurrency(currentCashInDrawer, settings.currencySymbol, settings.decimalPlaces)}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="cash-in-amount">Cash In Amount</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="cash-in-amount"
+                    type="number"
+                    value={cashInAmount}
+                    onChange={(e) => setCashInAmount(Number.parseFloat(e.target.value))}
+                    min={0}
+                    step={0.01}
+                  />
+                  <Button onClick={handleCashInSubmit} disabled={cashInAmount <= 0}>
+                    Add Cash
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="cash-out-amount">Cash Out Amount</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="cash-out-amount"
+                    type="number"
+                    value={cashOutAmount}
+                    onChange={(e) => setCashOutAmount(Number.parseFloat(e.target.value))}
+                    min={0}
+                    step={0.01}
+                  />
+                  <Button onClick={handleCashOutSubmit} disabled={cashOutAmount <= 0}>
+                    Remove Cash
+                  </Button>
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="cashOutAmount">Cash Out</Label>
-            <div className="flex gap-2">
-              <Input
-                id="cashOutAmount"
-                type="number"
-                value={cashOutAmount}
-                onChange={(e) => setCashOutAmount(e.target.value)}
-                placeholder="Amount to remove"
-                min="0"
-                step="0.01"
-              />
-              <Button onClick={handleCashOut} variant="destructive">
-                Remove Cash
+            <DialogFooter className="mt-auto pt-4">
+              <Button variant="outline" onClick={onClose}>
+                Close
               </Button>
-            </div>
-          </div>
+            </DialogFooter>
+          </TabsContent>
 
-          <div className="border-t pt-4 mt-4">
-            <Button className="w-full" onClick={handleZReport}>
-              Generate Z-Report
-            </Button>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
+          <TabsContent value="z-report" className="flex-1 flex flex-col p-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Starting Cash</Label>
+                <Input
+                  value={formatCurrency(zReportStartAmount, settings.currencySymbol, settings.decimalPlaces)}
+                  readOnly
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Cash In (from operations)</Label>
+                <Input
+                  value={formatCurrency(zReportCashIn, settings.currencySymbol, settings.decimalPlaces)}
+                  readOnly
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Cash Out (from operations)</Label>
+                <Input
+                  value={formatCurrency(zReportCashOut, settings.currencySymbol, settings.decimalPlaces)}
+                  readOnly
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Ending Cash (Current Drawer)</Label>
+                <Input
+                  value={formatCurrency(currentCashInDrawer, settings.currencySymbol, settings.decimalPlaces)}
+                  readOnly
+                />
+              </div>
+            </div>
+            <DialogFooter className="mt-auto pt-4">
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button onClick={handleZReportGenerate}>Generate Z-Report</Button>
+            </DialogFooter>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

@@ -1,6 +1,7 @@
 import type React from "react"
+import Link from "next/link"
 import { Settings, Truck, Tag, Users } from "lucide-react"
-import { SettingsTabs } from "@/components/settings-tabs"
+import { Card } from "@/components/ui/card"
 
 interface SettingsLayoutProps {
   children: React.ReactNode
@@ -31,11 +32,25 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
   ]
 
   return (
-    <div className="flex flex-col md:flex-row flex-1">
-      <aside className="w-full md:w-64 p-4 md:p-6 border-b md:border-r md:border-b-0">
-        <SettingsTabs />
+    <div className="flex min-h-screen w-full bg-muted/40">
+      <aside className="hidden w-64 flex-col border-r bg-background p-4 md:flex">
+        <nav className="flex flex-col gap-1">
+          <h2 className="mb-4 px-2 text-lg font-semibold tracking-tight">Settings</h2>
+          {sidebarNavItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center rounded-md px-2 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              {item.icon}
+              {item.title}
+            </Link>
+          ))}
+        </nav>
       </aside>
-      <main className="flex-1">{children}</main>
+      <main className="flex flex-1 flex-col p-4">
+        <Card className="flex-1 p-6">{children}</Card>
+      </main>
     </div>
   )
 }

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -10,72 +9,48 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import type { DeliveryProvider } from "@/lib/supabase"
 import { formatCurrency } from "@/lib/utils"
-import { useSettings } from "@/lib/settings-context"
-import type { Customer, DeliveryProvider } from "@/lib/supabase"
+import type { Settings } from "@/lib/settings-context"
 
 interface ShippingModalProps {
   isOpen: boolean
   onClose: () => void
-  totalAmount: number
-  onConfirmShipping: (details: {
-    address: string
-    city: string
-    cost: number
-    provider?: DeliveryProvider
-  }) => void
+  currentShippingDetails: { address: string; cost: number; provider?: DeliveryProvider } | null
   deliveryProviders: DeliveryProvider[]
-  customer: Customer | null
+  onSaveShipping: (details: { address: string; cost: number; provider?: DeliveryProvider }) => void
+  settings: Settings // Add settings prop
 }
 
 export function ShippingModal({
   isOpen,
   onClose,
-  totalAmount,
-  onConfirmShipping,
+  currentShippingDetails,
   deliveryProviders,
-  customer,
+  onSaveShipping,
+  settings,
 }: ShippingModalProps) {
-  const { settings } = useSettings()
-  const [address, setAddress] = useState(customer?.address || "")
-  const [city, setCity] = useState("")
-  const [selectedProviderId, setSelectedProviderId] = useState<string | undefined>(undefined)
-  const [shippingCost, setShippingCost] = useState(0)
+  const [address, setAddress] = useState(currentShippingDetails?.address || "")
+  const [cost, setCost] = useState(currentShippingDetails?.cost || settings.shipping.defaultCost || 0)
+  const [selectedProviderId, setSelectedProviderId] = useState(currentShippingDetails?.provider?.id || "")
 
   useEffect(() => {
     if (isOpen) {
-      setAddress(customer?.address || "")
-      setCity("")
-      setSelectedProviderId(undefined)
-      setShippingCost(0)
+      setAddress(currentShippingDetails?.address || "")
+      setCost(currentShippingDetails?.cost || settings.shipping.defaultCost || 0)
+      setSelectedProviderId(currentShippingDetails?.provider?.id || "")
     }
-  }, [isOpen, customer])
+  }, [isOpen, currentShippingDetails, settings.shipping.defaultCost])
 
-  const selectedProvider = selectedProviderId ? deliveryProviders.find((p) => p.id === selectedProviderId) : undefined
-
-  // Simulate shipping cost calculation (e.g., based on distance or flat rate)
-  useEffect(() => {
-    if (selectedProvider) {
-      // For simplicity, let's assume a flat rate or a dummy calculation
-      // In a real app, this would involve more complex logic (e.g., API call to provider)
-      setShippingCost(selectedProvider.cost_per_km || 5.0) // Example: flat 5.0 if cost_per_km is not set
-    } else {
-      setShippingCost(0)
-    }
-  }, [selectedProvider])
-
-  const handleConfirm = () => {
-    if (!address.trim() || !city.trim()) {
-      alert("Please enter a valid address and city.")
-      return
-    }
-    onConfirmShipping({
-      address: address.trim(),
-      city: city.trim(),
-      cost: shippingCost,
+  const handleSave = () => {
+    const selectedProvider = deliveryProviders.find((p) => p.id === selectedProviderId)
+    onSaveShipping({
+      address,
+      cost: Number.parseFloat(cost.toString()), // Ensure cost is a number
       provider: selectedProvider,
     })
     onClose()
@@ -83,30 +58,42 @@ export function ShippingModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[475px]">
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Shipping Details</DialogTitle>
-          <DialogDescription>Enter shipping information for the order.</DialogDescription>
+          <DialogDescription>Enter shipping address and cost for the order.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="address">Address</Label>
+            <Label htmlFor="shipping-address">Address</Label>
             <Input
-              id="address"
-              placeholder="123 Main St"
+              id="shipping-address"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
+              placeholder="Enter full shipping address"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="city">City</Label>
-            <Input id="city" placeholder="Anytown" value={city} onChange={(e) => setCity(e.target.value)} />
+            <Label htmlFor="shipping-cost">Cost</Label>
+            <Input
+              id="shipping-cost"
+              type="number"
+              value={cost}
+              onChange={(e) => setCost(Number.parseFloat(e.target.value))}
+              min={0}
+              step={0.01}
+              placeholder={formatCurrency(
+                settings.shipping.defaultCost || 0,
+                settings.currencySymbol,
+                settings.decimalPlaces,
+              )}
+            />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="deliveryProvider">Delivery Provider</Label>
+            <Label htmlFor="delivery-provider">Delivery Provider</Label>
             <Select value={selectedProviderId} onValueChange={setSelectedProviderId}>
-              <SelectTrigger id="deliveryProvider">
-                <SelectValue placeholder="Select a delivery provider" />
+              <SelectTrigger id="delivery-provider">
+                <SelectValue placeholder="Select a provider" />
               </SelectTrigger>
               <SelectContent>
                 {deliveryProviders.map((provider) => (
@@ -117,22 +104,14 @@ export function ShippingModal({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex justify-between items-center">
-            <Label>Estimated Shipping Cost:</Label>
-            <span className="font-bold">
-              {formatCurrency(shippingCost, settings.currencySymbol, settings.decimalPlaces)}
-            </span>
-          </div>
-          <div className="flex justify-between items-center text-lg font-bold border-t pt-4 mt-4">
-            <span>Total with Shipping:</span>
-            <span>{formatCurrency(totalAmount + shippingCost, settings.currencySymbol, settings.decimalPlaces)}</span>
-          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleConfirm}>Confirm Shipping</Button>
+          <Button onClick={handleSave} disabled={!address.trim() || cost < 0}>
+            Save Shipping
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

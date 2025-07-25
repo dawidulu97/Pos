@@ -1,200 +1,153 @@
-CREATE TABLE IF NOT EXISTS products (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  description TEXT,
-  price NUMERIC(10, 2) NOT NULL,
-  sku TEXT UNIQUE,
-  image TEXT,
-  stock INTEGER DEFAULT 0,
-  category TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- This script is for creating tables in Supabase.
+-- It assumes you have already connected to your Supabase project.
+
+-- Create products table
+CREATE TABLE products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    price NUMERIC(10, 2) NOT NULL,
+    image VARCHAR(255), -- Can store emoji or URL
+    category VARCHAR(255) NOT NULL,
+    stock INT NOT NULL DEFAULT 0,
+    sku VARCHAR(255) UNIQUE
 );
 
-CREATE TABLE IF NOT EXISTS categories (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL UNIQUE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- Create customers table
+CREATE TABLE customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE,
+    phone VARCHAR(50) UNIQUE,
+    address TEXT
 );
 
-CREATE TABLE IF NOT EXISTS customers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  email TEXT UNIQUE,
-  phone TEXT,
-  address TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- Create orders table
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID REFERENCES customers(id),
+    customer_name VARCHAR(255), -- Denormalized for easier reporting
+    total_amount NUMERIC(10, 2) NOT NULL,
+    total_discount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    total_fees NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    amount_paid NUMERIC(10, 2) NOT NULL,
+    change_due NUMERIC(10, 2) NOT NULL,
+    payment_method VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'completed', -- e.g., 'pending', 'completed', 'voided', 'refunded'
+    notes TEXT,
+    shipping_address TEXT,
+    shipping_cost NUMERIC(10, 2) DEFAULT 0,
+    delivery_provider_id UUID, -- Will link to delivery_providers table
+    delivery_provider_name VARCHAR(255), -- Denormalized
+    order_type VARCHAR(50) NOT NULL DEFAULT 'retail', -- 'retail', 'delivery', 'online'
+    payment_status VARCHAR(50) NOT NULL DEFAULT 'paid', -- 'unpaid', 'paid', 'partially_refunded', 'refunded'
+    voided_at TIMESTAMPTZ,
+    refunded_at TIMESTAMPTZ,
+    refund_reason TEXT,
+    cash_drawer_start_amount NUMERIC(10, 2),
+    cash_drawer_end_amount NUMERIC(10, 2),
+    cash_in_amount NUMERIC(10, 2),
+    cash_out_amount NUMERIC(10, 2),
+    z_report_printed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS orders (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  customer_id UUID REFERENCES customers(id),
-  customer_name TEXT,
-  total NUMERIC(10, 2) NOT NULL,
-  total_amount NUMERIC(10, 2) NOT NULL,
-  subtotal NUMERIC(10, 2) NOT NULL,
-  tax_amount NUMERIC(10, 2) NOT NULL,
-  total_discount NUMERIC(10, 2) NOT NULL,
-  total_fees NUMERIC(10, 2) NOT NULL,
-  payment_method TEXT NOT NULL,
-  amount_paid NUMERIC(10, 2) NOT NULL,
-  change_due NUMERIC(10, 2) NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending', -- e.g., 'pending', 'completed', 'voided', 'refunded'
-  shipping_address TEXT,
-  shipping_cost NUMERIC(10, 2) DEFAULT 0,
-  delivery_provider_id UUID,
-  delivery_provider_name TEXT,
-  shipping_city TEXT,
-  order_type TEXT DEFAULT 'retail', -- 'retail' or 'delivery'
-  payment_status TEXT DEFAULT 'unpaid', -- 'paid', 'unpaid', 'partially_paid'
-  voided_at TIMESTAMP WITH TIME ZONE,
-  refunded_at TIMESTAMP WITH TIME ZONE,
-  refund_reason TEXT,
-  cash_drawer_start_amount NUMERIC(10, 2),
-  cash_drawer_end_amount NUMERIC(10, 2),
-  cash_in_amount NUMERIC(10, 2),
-  cash_out_amount NUMERIC(10, 2),
-  z_report_printed_at TIMESTAMP WITH TIME ZONE,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- Create order_items table (junction table for orders and products)
+CREATE TABLE order_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES products(id),
+    quantity INT NOT NULL,
+    price NUMERIC(10, 2) NOT NULL, -- Price at the time of sale
+    discount NUMERIC(10, 2) NOT NULL DEFAULT 0, -- Per-item discount percentage
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS order_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
-  product_id UUID REFERENCES products(id),
-  name TEXT NOT NULL, -- Denormalized product name
-  quantity INTEGER NOT NULL,
-  price NUMERIC(10, 2) NOT NULL,
-  discount NUMERIC(10, 2) DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- Create categories table
+CREATE TABLE categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL UNIQUE
 );
 
-CREATE TABLE IF NOT EXISTS settings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  store_name TEXT NOT NULL,
-  tax_rate NUMERIC(5, 4) DEFAULT 0.05,
-  currency_symbol TEXT DEFAULT '$',
-  decimal_places INTEGER DEFAULT 2,
-  receipt_printer_enabled BOOLEAN DEFAULT FALSE,
-  payment_methods JSONB DEFAULT '[]',
-  shipping_enabled BOOLEAN DEFAULT FALSE,
-  delivery_providers JSONB DEFAULT '[]',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- Create delivery_providers table
+CREATE TABLE delivery_providers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL UNIQUE,
+    default_fee NUMERIC(10, 2) NOT NULL DEFAULT 0
 );
 
--- Enable Row Level Security (RLS)
+-- Create city_fees table for delivery providers
+CREATE TABLE city_fees (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider_id UUID NOT NULL REFERENCES delivery_providers(id) ON DELETE CASCADE,
+    city VARCHAR(255) NOT NULL,
+    fee NUMERIC(10, 2) NOT NULL,
+    UNIQUE (provider_id, city) -- Ensure unique city fee per provider
+);
+
+-- Enable Row Level Security (RLS) for all tables
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE delivery_providers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE city_fees ENABLE ROW LEVEL SECURITY;
 
--- Create RLS policies
--- Policies for `products` table
-DROP POLICY IF EXISTS "Public products are viewable by everyone." ON products;
-CREATE POLICY "Public products are viewable by everyone." ON products
-  FOR SELECT USING (TRUE);
+-- Create RLS policies for public access (read-only for products, categories, delivery_providers)
+-- For a real app, you'd want more granular policies based on user roles.
 
-DROP POLICY IF EXISTS "Authenticated users can insert products." ON products;
-CREATE POLICY "Authenticated users can insert products." ON products
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- Products: Allow all users to read
+CREATE POLICY "Allow public read access to products" ON products FOR SELECT USING (true);
+-- Products: Allow authenticated users to insert, update, delete
+CREATE POLICY "Allow authenticated users to manage products" ON products
+FOR ALL
+TO authenticated
+USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Authenticated users can update their own products." ON products;
-CREATE POLICY "Authenticated users can update their own products." ON products
-  FOR UPDATE USING (auth.role() = 'authenticated');
+-- Customers: Allow all users to read
+CREATE POLICY "Allow public read access to customers" ON customers FOR SELECT USING (true);
+-- Customers: Allow authenticated users to insert, update, delete
+CREATE POLICY "Allow authenticated users to manage customers" ON customers
+FOR ALL
+TO authenticated
+USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Authenticated users can delete their own products." ON products;
-CREATE POLICY "Authenticated users can delete their own products." ON products
-  FOR DELETE USING (auth.role() = 'authenticated');
+-- Orders: Allow all users to read
+CREATE POLICY "Allow public read access to orders" ON orders FOR SELECT USING (true);
+-- Orders: Allow authenticated users to insert, update, delete
+CREATE POLICY "Allow authenticated users to manage orders" ON orders
+FOR ALL
+TO authenticated
+USING (true) WITH CHECK (true);
 
--- Policies for `categories` table
-DROP POLICY IF EXISTS "Public categories are viewable by everyone." ON categories;
-CREATE POLICY "Public categories are viewable by everyone." ON categories
-  FOR SELECT USING (TRUE);
+-- Order Items: Allow all users to read
+CREATE POLICY "Allow public read access to order_items" ON order_items FOR SELECT USING (true);
+-- Order Items: Allow authenticated users to insert, update, delete
+CREATE POLICY "Allow authenticated users to manage order_items" ON order_items
+FOR ALL
+TO authenticated
+USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Authenticated users can insert categories." ON categories;
-CREATE POLICY "Authenticated users can insert categories." ON categories
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- Categories: Allow all users to read
+CREATE POLICY "Allow public read access to categories" ON categories FOR SELECT USING (true);
+-- Categories: Allow authenticated users to insert, update, delete
+CREATE POLICY "Allow authenticated users to manage categories" ON categories
+FOR ALL
+TO authenticated
+USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Authenticated users can update their own categories." ON categories;
-CREATE POLICY "Authenticated users can update their own categories." ON categories
-  FOR UPDATE USING (auth.role() = 'authenticated');
+-- Delivery Providers: Allow all users to read
+CREATE POLICY "Allow public read access to delivery_providers" ON delivery_providers FOR SELECT USING (true);
+-- Delivery Providers: Allow authenticated users to insert, update, delete
+CREATE POLICY "Allow authenticated users to manage delivery_providers" ON delivery_providers
+FOR ALL
+TO authenticated
+USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Authenticated users can delete their own categories." ON categories;
-CREATE POLICY "Authenticated users can delete their own categories." ON categories
-  FOR DELETE USING (auth.role() = 'authenticated');
-
--- Policies for `customers` table
-DROP POLICY IF EXISTS "Public customers are viewable by everyone." ON customers;
-CREATE POLICY "Public customers are viewable by everyone." ON customers
-  FOR SELECT USING (TRUE);
-
-DROP POLICY IF EXISTS "Authenticated users can insert customers." ON customers;
-CREATE POLICY "Authenticated users can insert customers." ON customers
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Authenticated users can update their own customers." ON customers;
-CREATE POLICY "Authenticated users can update their own customers." ON customers
-  FOR UPDATE USING (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Authenticated users can delete their own customers." ON customers;
-CREATE POLICY "Authenticated users can delete their own customers." ON customers
-  FOR DELETE USING (auth.role() = 'authenticated');
-
--- Policies for `orders` table
-DROP POLICY IF EXISTS "Public orders are viewable by everyone." ON orders;
-CREATE POLICY "Public orders are viewable by everyone." ON orders
-  FOR SELECT USING (TRUE);
-
-DROP POLICY IF EXISTS "Authenticated users can insert orders." ON orders;
-CREATE POLICY "Authenticated users can insert orders." ON orders
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Authenticated users can update their own orders." ON orders;
-CREATE POLICY "Authenticated users can update their own orders." ON orders
-  FOR UPDATE USING (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Authenticated users can delete their own orders." ON orders;
-CREATE POLICY "Authenticated users can delete their own orders." ON orders
-  FOR DELETE USING (auth.role() = 'authenticated');
-
--- Policies for `order_items` table
-DROP POLICY IF EXISTS "Public order_items are viewable by everyone." ON order_items;
-CREATE POLICY "Public order_items are viewable by everyone." ON order_items
-  FOR SELECT USING (TRUE);
-
-DROP POLICY IF EXISTS "Authenticated users can insert order_items." ON order_items;
-CREATE POLICY "Authenticated users can insert order_items." ON order_items
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Authenticated users can update their own order_items." ON order_items;
-CREATE POLICY "Authenticated users can update their own order_items." ON order_items
-  FOR UPDATE USING (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Authenticated users can delete their own order_items." ON order_items;
-CREATE POLICY "Authenticated users can delete their own order_items." ON order_items
-  FOR DELETE USING (auth.role() = 'authenticated');
-
--- Policies for `settings` table
-DROP POLICY IF EXISTS "Public settings are viewable by everyone." ON settings;
-CREATE POLICY "Public settings are viewable by everyone." ON settings
-  FOR SELECT USING (TRUE);
-
-DROP POLICY IF EXISTS "Authenticated users can insert settings." ON settings;
-CREATE POLICY "Authenticated users can insert settings." ON settings
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Authenticated users can update their own settings." ON settings;
-CREATE POLICY "Authenticated users can update their own settings." ON settings
-  FOR UPDATE USING (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Authenticated users can delete their own settings." ON settings;
-CREATE POLICY "Authenticated users can delete their own settings." ON settings
-  FOR DELETE USING (auth.role() = 'authenticated');
+-- City Fees: Allow all users to read
+CREATE POLICY "Allow public read access to city_fees" ON city_fees FOR SELECT USING (true);
+-- City Fees: Allow authenticated users to insert, update, delete
+CREATE POLICY "Allow authenticated users to manage city_fees" ON city_fees
+FOR ALL
+TO authenticated
+USING (true) WITH CHECK (true);

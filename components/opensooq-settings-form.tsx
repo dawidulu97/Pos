@@ -1,69 +1,98 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useSettings } from "@/lib/settings-context"
 import { toast } from "@/hooks/use-toast"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useState, useEffect } from "react"
 
 export function OpenSooqSettingsForm() {
   const { settings, updateSettings } = useSettings()
-  const [openSooqEnabled, setOpenSooqEnabled] = useState(settings.openSooq?.enabled || false)
-  const [openSooqApiKey, setOpenSooqApiKey] = useState(settings.openSooq?.apiKey || "")
-  const [openSooqStoreId, setOpenSooqStoreId] = useState(settings.openSooq?.storeId || "")
+  const [openSooqEnabled, setOpenSooqEnabled] = useState(settings.openSooqEnabled)
+  const [openSooqPhoneNumber, setOpenSooqPhoneNumber] = useState(settings.openSooqPhoneNumber || "")
+  const [openSooqPassword, setOpenSooqPassword] = useState(settings.openSooqPassword || "")
+  const [openSooqRepostTimer, setOpenSooqRepostTimer] = useState(settings.openSooqRepostTimer || 24)
 
   useEffect(() => {
-    setOpenSooqEnabled(settings.openSooq?.enabled || false)
-    setOpenSooqApiKey(settings.openSooq?.apiKey || "")
-    setOpenSooqStoreId(settings.openSooq?.storeId || "")
+    setOpenSooqEnabled(settings.openSooqEnabled)
+    setOpenSooqPhoneNumber(settings.openSooqPhoneNumber || "")
+    setOpenSooqPassword(settings.openSooqPassword || "")
+    setOpenSooqRepostTimer(settings.openSooqRepostTimer || 24)
   }, [settings])
 
   const handleSave = () => {
     updateSettings({
-      openSooq: {
-        enabled: openSooqEnabled,
-        apiKey: openSooqApiKey.trim(),
-        storeId: openSooqStoreId.trim(),
-      },
+      openSooqEnabled,
+      openSooqPhoneNumber,
+      openSooqPassword,
+      openSooqRepostTimer,
     })
     toast({
-      title: "OpenSooq Settings Saved",
-      description: "Your OpenSooq integration settings have been updated.",
+      title: "Settings Saved",
+      description: "OpenSooq integration settings have been updated.",
     })
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between space-x-2">
-        <Label htmlFor="openSooqEnabled">Enable OpenSooq Integration</Label>
-        <Switch id="openSooqEnabled" checked={openSooqEnabled} onCheckedChange={setOpenSooqEnabled} />
-      </div>
-      {openSooqEnabled && (
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="openSooqApiKey">API Key</Label>
-            <Input
-              id="openSooqApiKey"
-              type="password"
-              value={openSooqApiKey}
-              onChange={(e) => setOpenSooqApiKey(e.target.value)}
-              placeholder="Enter OpenSooq API Key"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="openSooqStoreId">Store ID</Label>
-            <Input
-              id="openSooqStoreId"
-              value={openSooqStoreId}
-              onChange={(e) => setOpenSooqStoreId(e.target.value)}
-              placeholder="Enter OpenSooq Store ID"
-            />
-          </div>
+    <div className="space-y-6 p-6 bg-white rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold text-gray-800">OpenSooq Integration</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="flex items-center justify-between space-x-2 rounded-md border p-4 col-span-full">
+          <Label htmlFor="openSooqEnabled" className="flex flex-col space-y-1">
+            <span className="text-base font-medium leading-none">Enable OpenSooq</span>
+            <span className="text-sm text-muted-foreground">Integrate with OpenSooq for product publishing.</span>
+          </Label>
+          <Switch id="openSooqEnabled" checked={openSooqEnabled} onCheckedChange={setOpenSooqEnabled} />
         </div>
-      )}
-      <Button onClick={handleSave}>Save Changes</Button>
+
+        {openSooqEnabled && (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="openSooqPhoneNumber">OpenSooq Phone Number</Label>
+              <Input
+                id="openSooqPhoneNumber"
+                value={openSooqPhoneNumber}
+                onChange={(e) => setOpenSooqPhoneNumber(e.target.value)}
+                placeholder="e.g., +962791234567"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="openSooqPassword">OpenSooq Password</Label>
+              <Input
+                id="openSooqPassword"
+                type="password"
+                value={openSooqPassword}
+                onChange={(e) => setOpenSooqPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="openSooqRepostTimer">Auto Repost Timer (hours)</Label>
+              <Select
+                value={String(openSooqRepostTimer)}
+                onValueChange={(value) => setOpenSooqRepostTimer(Number.parseInt(value))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select repost interval" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 Hour</SelectItem>
+                  <SelectItem value="6">6 Hours</SelectItem>
+                  <SelectItem value="12">12 Hours</SelectItem>
+                  <SelectItem value="24">24 Hours</SelectItem>
+                  <SelectItem value="48">48 Hours</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+      </div>
+
+      <Button onClick={handleSave} className="mt-8">
+        Save Settings
+      </Button>
     </div>
   )
 }

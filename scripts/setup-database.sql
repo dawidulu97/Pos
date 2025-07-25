@@ -1,63 +1,81 @@
--- This script sets up initial data for the POS system.
--- It's designed to be idempotent, meaning it can be run multiple times without
--- causing issues (e.g., by checking for existing data before inserting).
+-- This script sets up the initial database schema for the POS system.
 
--- Insert sample categories if they don't exist
-INSERT INTO categories (id, name)
-VALUES
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Electronics') ON CONFLICT (name) DO NOTHING,
-  ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Apparel') ON CONFLICT (name) DO NOTHING,
-  ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'Books') ON CONFLICT (name) DO NOTHING;
+-- Create products table
+CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    price NUMERIC(10, 2) NOT NULL,
+    image TEXT,
+    category TEXT,
+    stock INTEGER DEFAULT 0,
+    sku TEXT UNIQUE
+);
 
--- Insert sample products if they don't exist
-INSERT INTO products (id, name, description, price, sku, image, stock, category)
-VALUES
-  ('d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14', 'Laptop Pro', 'Powerful laptop for professionals.', 1200.00, 'LAPTOP-PRO-001', '/images/opensooq/laptop-front.webp', 50, 'Electronics') ON CONFLICT (sku) DO NOTHING,
-  ('e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15', 'Mechanical Keyboard', 'RGB mechanical keyboard with clicky switches.', 80.00, 'KEYBOARD-MECH-001', '/images/opensooq/laptop-keyboard.jpeg', 100, 'Electronics') ON CONFLICT (sku) DO NOTHING,
-  ('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a16', 'Wireless Mouse', 'Ergonomic wireless mouse.', 25.00, 'MOUSE-WIRELESS-001', '/placeholder.svg', 200, 'Electronics') ON CONFLICT (sku) DO NOTHING,
-  ('g0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'T-Shirt (Large)', 'Comfortable cotton t-shirt, large size.', 15.00, 'TSHIRT-L-001', '/placeholder.svg', 150, 'Apparel') ON CONFLICT (sku) DO NOTHING,
-  ('h0eebc99-9c0b-4ef8-bb6d-6bb9bd380a18', 'The Great Novel', 'A captivating story of adventure and mystery.', 20.00, 'BOOK-NOVEL-001', '/placeholder.svg', 75, 'Books') ON CONFLICT (sku) DO NOTHING;
+-- Create customers table
+CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    address TEXT
+);
 
--- Insert sample customers if they don't exist
+-- Create orders table
+CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT REFERENCES customers(id),
+    customer_name TEXT, -- Denormalized for easier reporting
+    total_amount NUMERIC(10, 2) NOT NULL,
+    total_discount NUMERIC(10, 2) DEFAULT 0,
+    total_fees NUMERIC(10, 2) DEFAULT 0,
+    amount_paid NUMERIC(10, 2) NOT NULL,
+    change_due NUMERIC(10, 2) NOT NULL,
+    payment_method TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'completed', -- e.g., 'completed', 'pending', 'voided', 'refunded'
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    shipping_address TEXT,
+    shipping_cost NUMERIC(10, 2) DEFAULT 0,
+    delivery_provider_id TEXT, -- Will be a foreign key to delivery_providers table
+    delivery_provider_name TEXT, -- Denormalized
+    order_type TEXT DEFAULT 'retail', -- 'retail' or 'delivery'
+    payment_status TEXT DEFAULT 'paid', -- 'paid', 'partially_paid', 'unpaid', 'refunded'
+    voided_at TIMESTAMP WITH TIME ZONE,
+    refunded_at TIMESTAMP WITH TIME ZONE,
+    refund_reason TEXT,
+    cash_drawer_start_amount NUMERIC(10, 2),
+    cash_drawer_end_amount NUMERIC(10, 2),
+    cash_in_amount NUMERIC(10, 2),
+    cash_out_amount NUMERIC(10, 2),
+    z_report_printed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Create order_items table (junction table for orders and products)
+CREATE TABLE IF NOT EXISTS order_items (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id TEXT NOT NULL REFERENCES products(id),
+    quantity INTEGER NOT NULL,
+    price NUMERIC(10, 2) NOT NULL, -- Price at the time of sale
+    discount NUMERIC(10, 2) DEFAULT 0, -- Discount applied to this item
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create a default "Guest" customer if not exists
 INSERT INTO customers (id, name, email, phone, address)
-VALUES
-  ('i0eebc99-9c0b-4ef8-bb6d-6bb9bd380a19', 'Alice Smith', 'alice@example.com', '555-123-4567', '123 Main St, Anytown') ON CONFLICT (email) DO NOTHING,
-  ('j0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20', 'Bob Johnson', 'bob@example.com', '555-987-6543', '456 Oak Ave, Somewhere') ON CONFLICT (email) DO NOTHING;
+VALUES ('00000000-0000-0000-0000-000000000001', 'Guest', '', '', '')
+ON CONFLICT (id) DO NOTHING;
 
--- Insert default settings if they don't exist
-INSERT INTO settings (id, store_name, tax_rate, currency_symbol, decimal_places, receipt_printer_enabled, payment_methods, shipping_enabled, delivery_providers)
-VALUES
-  ('k0eebc99-9c0b-4ef8-bb6d-6bb9bd380a21', 'My Awesome Store', 0.07, '$', 2, TRUE,
-   '[{"id": "cash", "name": "Cash", "isPaid": true}, {"id": "card", "name": "Card", "isPaid": true}, {"id": "credit", "name": "Store Credit", "isPaid": false}]'::jsonb,
-   TRUE,
-   '[{"id": "fedex", "name": "FedEx", "cost_per_km": 0.5}, {"id": "dhl", "name": "DHL", "cost_per_km": 0.6}]'::jsonb
-  ) ON CONFLICT (id) DO NOTHING;
-
--- Insert sample orders and order items if they don't exist
--- Order 1: Completed retail order
-INSERT INTO orders (id, customer_id, customer_name, total, total_amount, subtotal, tax_amount, total_discount, total_fees, payment_method, amount_paid, change_due, status, order_type, payment_status)
-VALUES
-  ('l0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22', 'i0eebc99-9c0b-4ef8-bb6d-6bb9bd380a19', 'Alice Smith', 1284.00, 1284.00, 1200.00, 84.00, 0.00, 0.00, 'card', 1284.00, 0.00, 'completed', 'retail', 'paid') ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO order_items (order_id, product_id, name, quantity, price, discount)
-VALUES
-  ('l0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14', 'Laptop Pro', 1, 1200.00, 0.00) ON CONFLICT (order_id, product_id) DO NOTHING;
-
--- Order 2: Pending delivery order with discount
-INSERT INTO orders (id, customer_id, customer_name, total, total_amount, subtotal, tax_amount, total_discount, total_fees, payment_method, amount_paid, change_due, status, shipping_address, shipping_cost, delivery_provider_id, delivery_provider_name, shipping_city, order_type, payment_status)
-VALUES
-  ('m0eebc99-9c0b-4ef8-bb6d-6bb9bd380a23', 'j0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20', 'Bob Johnson', 107.00, 107.00, 105.00, 7.00, 5.00, 0.00, 'cash', 110.00, 3.00, 'pending', '789 Pine Ln, Villagetown', 5.00, 'fedex', 'FedEx', 'Villagetown', 'delivery', 'unpaid') ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO order_items (order_id, product_id, name, quantity, price, discount)
-VALUES
-  ('m0eebc99-9c0b-4ef8-bb6d-6bb9bd380a23', 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15', 'Mechanical Keyboard', 1, 80.00, 0.00) ON CONFLICT (order_id, product_id) DO NOTHING,
-  ('m0eebc99-9c0b-4ef8-bb6d-6bb9bd380a23', 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a16', 'Wireless Mouse', 1, 25.00, 5.00) ON CONFLICT (order_id, product_id) DO NOTHING;
-
--- Order 3: Voided order
-INSERT INTO orders (id, customer_id, customer_name, total, total_amount, subtotal, tax_amount, total_discount, total_fees, payment_method, amount_paid, change_due, status, voided_at, order_type, payment_status)
-VALUES
-  ('n0eebc99-9c0b-4ef8-bb6d-6bb9bd380a24', NULL, 'Guest', 16.05, 16.05, 15.00, 1.05, 0.00, 0.00, 'cash', 20.00, 3.95, 'voided', NOW(), 'retail', 'paid') ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO order_items (order_id, product_id, name, quantity, price, discount)
-VALUES
-  ('n0eebc99-9c0b-4ef8-bb6d-6bb9bd380a24', 'g0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'T-Shirt (Large)', 1, 15.00, 0.00) ON CONFLICT (order_id, product_id) DO NOTHING;
+-- Seed some initial products if the table is empty
+INSERT INTO products (id, name, price, image, category, stock, sku) VALUES
+('prod_001', 'Espresso Machine', 350.00, '☕', 'Coffee Equipment', 10, 'ESPMCH001'),
+('prod_002', 'Bag of Coffee Beans (250g)', 15.00, '🫘', 'Coffee Beans', 50, 'COFBNS001'),
+('prod_003', 'Ceramic Mug', 12.50, '컵', 'Merchandise', 100, 'MUGCRM001'),
+('prod_004', 'Latte Art Pitcher', 25.00, '🥛', 'Coffee Equipment', 20, 'LATPCH001'),
+('prod_005', 'Digital Coffee Scale', 45.00, '⚖️', 'Coffee Equipment', 15, 'COFSCAL001'),
+('prod_006', 'French Press (Small)', 30.00, '☕', 'Coffee Equipment', 25, 'FRNPRS001'),
+('prod_007', 'Aeropress', 32.00, '☕', 'Coffee Equipment', 18, 'AERPRS001'),
+('prod_008', 'Cold Brew Maker', 40.00, '🧊', 'Coffee Equipment', 12, 'CLDBRW001'),
+('prod_009', 'Reusable Coffee Cup', 18.00, '🥤', 'Merchandise', 70, 'REUCUP001'),
+('prod_010', 'Coffee Grinder (Manual)', 55.00, '⚙️', 'Coffee Equipment', 10, 'COFGRN001')
+ON CONFLICT (id) DO NOTHING;

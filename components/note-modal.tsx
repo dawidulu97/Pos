@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -10,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 
@@ -24,8 +24,10 @@ export function NoteModal({ isOpen, onClose, currentNote, onSaveNote }: NoteModa
   const [note, setNote] = useState(currentNote)
 
   useEffect(() => {
-    setNote(currentNote)
-  }, [currentNote])
+    if (isOpen) {
+      setNote(currentNote)
+    }
+  }, [isOpen, currentNote])
 
   const handleSave = () => {
     onSaveNote(note)
@@ -36,18 +38,18 @@ export function NoteModal({ isOpen, onClose, currentNote, onSaveNote }: NoteModa
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Add Note</DialogTitle>
-          <DialogDescription>Add a note to the current order.</DialogDescription>
+          <DialogTitle>Add Order Note</DialogTitle>
+          <DialogDescription>Add any special notes or instructions for this order.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="note">Note</Label>
+          <div className="grid gap-2">
+            <Label htmlFor="order-note">Note</Label>
             <Textarea
-              id="note"
-              placeholder="Enter your note here..."
+              id="order-note"
+              placeholder="e.g., Customer prefers no onions, deliver to back door, etc."
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              rows={5}
+              className="min-h-[120px]"
             />
           </div>
         </div>

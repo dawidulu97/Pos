@@ -1,146 +1,297 @@
 import { createClient } from "@supabase/supabase-js"
-import type { Database } from "./database.types"
-import { cookies } from "next/headers"
-import { cache } from "react"
 
-// Client-side Supabase client (singleton pattern)
-let supabaseBrowserClient: ReturnType<typeof createClient> | null = null
+// Define your database types for better type safety
+// You would typically generate these using `supabase gen types typescript --schema public > types/supabase.ts`
+// For now, we'll define basic types manually.
+export interface Product {
+  id: string
+  name: string
+  price: number
+  image: string
+  category: string
+  stock: number
+  sku: string
+}
 
+export interface Customer {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+  address: string | null
+}
+
+export interface Order {
+  id: string
+  customer_id: string | null
+  customer_name: string | null
+  total_amount: number
+  total_discount: number
+  total_fees: number
+  amount_paid: number
+  change_due: number
+  payment_method: string
+  status: string // e.g., 'completed', 'pending', 'voided', 'refunded'
+  notes: string | null
+  created_at: string // ISO timestamp
+  shipping_address: string | null
+  shipping_cost: number
+  delivery_provider_id: string | null
+  delivery_provider_name: string | null
+  order_type: string // 'retail' or 'delivery'
+  payment_status: string // 'paid', 'partially_paid', 'unpaid', 'refunded'
+  voided_at: string | null
+  refunded_at: string | null
+  refund_reason: string | null
+  cash_drawer_start_amount: number | null
+  cash_drawer_end_amount: number | null
+  cash_in_amount: number | null
+  cash_out_amount: number | null
+  z_report_printed_at: string | null
+}
+
+export interface OrderItem {
+  id: string
+  order_id: string
+  product_id: string
+  quantity: number
+  price: number
+  discount: number // Percentage discount
+  created_at: string
+}
+
+export interface Category {
+  id: string
+  name: string
+  created_at: string
+}
+
+export interface DeliveryProvider {
+  id: string
+  name: string
+  contact_phone: string | null
+  contact_email: string | null
+  is_active: boolean
+  created_at: string
+}
+
+// Function to create a Supabase client for client-side operations
+// Uses NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
 export function createBrowserSupabaseClient() {
-  if (!supabaseBrowserClient) {
-    supabaseBrowserClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn(
+      "Supabase environment variables are not set. NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are required.",
     )
+    return null
   }
-  return supabaseBrowserClient
+
+  return createClient(supabaseUrl, supabaseAnonKey)
 }
 
-// Server-side Supabase client for Route Handlers and Server Components
-export const createServerSupabaseClient = cache(() => {
-  const cookieStore = cookies()
-  return createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value
-      },
-      set(name: string, value: string, options: any) {
-        try {
-          cookieStore.set({ name, value, ...options })
-        } catch (error) {
-          // The `cookies().set()` method can only be called in a Server Context.
-          // We're only calling this when rendering a Server Component, an RSC,
-          // or an API route. This error is safe to ignore.
-        }
-      },
-      remove(name: string, options: any) {
-        try {
-          cookieStore.set({ name, value: "", ...options })
-        } catch (error) {
-          // The `cookies().set()` method can only be called in a Server Context.
-          // We're only calling this when rendering a Server Component, an RSC,
-          // or an API route. This error is safe to ignore.
-        }
-      },
-    },
-  })
-})
+// Function to create a Supabase client for server-side operations
+// Uses SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY for RLS-enabled server actions)
+export function createServerSupabaseClient() {
+  const supabaseUrl = process.env.SUPABASE_URL
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-// Database operations for convenience
-export const dbOperations = {
-  getProducts: async () => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("products").select("*").order("name", { ascending: true })
-  },
-  addProduct: async (
-    product: Omit<Database["public"]["Tables"]["products"]["Row"], "id" | "created_at" | "updated_at">,
-  ) => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("products").insert(product).select().single()
-  },
-  updateProduct: async (
-    id: string,
-    product: Partial<Omit<Database["public"]["Tables"]["products"]["Row"], "id" | "created_at" | "updated_at">>,
-  ) => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("products").update(product).eq("id", id).select().single()
-  },
-  deleteProduct: async (id: string) => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("products").delete().eq("id", id)
-  },
-  getCategories: async () => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("categories").select("*").order("name", { ascending: true })
-  },
-  addCategory: async (name: string) => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("categories").insert({ name }).select().single()
-  },
-  getCustomers: async () => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("customers").select("*").order("name", { ascending: true })
-  },
-  addCustomer: async (
-    customer: Omit<Database["public"]["Tables"]["customers"]["Row"], "id" | "created_at" | "updated_at">,
-  ) => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("customers").insert(customer).select().single()
-  },
-  updateCustomer: async (
-    id: string,
-    customer: Partial<Omit<Database["public"]["Tables"]["customers"]["Row"], "id" | "created_at" | "updated_at">>,
-  ) => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("customers").update(customer).eq("id", id).select().single()
-  },
-  getOrders: async () => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase
-      .from("orders")
-      .select(`
-      *,
-      order_items (
-        id,
-        product_id,
-        name,
-        quantity,
-        price,
-        discount
-      )
-    `)
-      .order("created_at", { ascending: false })
-  },
-  updateOrderStatus: async (id: string, status: Database["public"]["Tables"]["orders"]["Row"]["status"]) => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("orders").update({ status, updated_at: new Date().toISOString() }).eq("id", id)
-  },
-  getSettings: async () => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("settings").select("*").single()
-  },
-  updateSettings: async (id: string, settings: Partial<Database["public"]["Tables"]["settings"]["Row"]>) => {
-    const supabase = createBrowserSupabaseClient()
-    return supabase.from("settings").update(settings).eq("id", id).select().single()
-  },
-  getDeliveryProviders: async () => {
-    const supabase = createBrowserSupabaseClient()
-    // Assuming delivery providers are stored within the settings table as JSONB
-    // This function would need to fetch settings and parse the delivery_providers array
-    const { data, error } = await supabase.from("settings").select("delivery_providers").single()
-    if (error) {
-      console.error("Error fetching delivery providers from settings:", error)
-      return { data: [], error }
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    console.warn(
+      "Supabase environment variables for server are not set. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.",
+    )
+    return null
+  }
+
+  // Use service_role key for elevated privileges on the server
+  return createClient(supabaseUrl, supabaseServiceRoleKey)
+}
+
+// Helper for database operations
+export const getDbOperations = (supabaseClient: ReturnType<typeof createBrowserSupabaseClient>) => {
+  if (!supabaseClient) {
+    console.error("Supabase client is not initialized. Database operations are unavailable.")
+    return {
+      isOnline: false,
+      getProducts: async () => ({ data: [], error: new Error("Supabase client not initialized") }),
+      addProduct: async (product: Product) => ({ data: null, error: new Error("Supabase client not initialized") }),
+      updateProduct: async (product: Product) => ({ data: null, error: new Error("Supabase client not initialized") }),
+      deleteProduct: async (id: string) => ({ error: new Error("Supabase client not initialized") }),
+      deleteMultipleProducts: async (ids: string[]) => ({ error: new Error("Supabase client not initialized") }),
+      getCustomers: async () => ({ data: [], error: new Error("Supabase client not initialized") }),
+      addCustomer: async (customer: Customer) => ({ data: null, error: new Error("Supabase client not initialized") }),
+      updateCustomer: async (customer: Customer) => ({
+        data: null,
+        error: new Error("Supabase client not initialized"),
+      }),
+      deleteCustomer: async (id: string) => ({ error: new Error("Supabase client not initialized") }),
+      getOrders: async () => ({ data: [], error: new Error("Supabase client not initialized") }),
+      addOrder: async (order: Omit<Order, "created_at">, items: Omit<OrderItem, "id" | "order_id">[]) => ({
+        data: null,
+        error: new Error("Supabase client not initialized"),
+      }),
+      getOrderItems: async (orderId: string) => ({ data: [], error: new Error("Supabase client not initialized") }),
+      updateOrderStatus: async (orderId: string, status: string, timestampField: "voided_at" | "refunded_at") => ({
+        data: null,
+        error: new Error("Supabase client not initialized"),
+      }),
+      refundOrder: async (orderId: string, refundAmount: number, reason: string) => ({
+        data: null,
+        error: new Error("Supabase client not initialized"),
+      }),
+      deleteOrder: async (id: string) => ({ error: new Error("Supabase client not initialized") }),
+      getCategories: async () => ({ data: [], error: new Error("Supabase client not initialized") }),
+      addCategory: async (category: Omit<Category, "id" | "created_at">) => ({
+        data: null,
+        error: new Error("Supabase client not initialized"),
+      }),
+      getDeliveryProviders: async () => ({ data: [], error: new Error("Supabase client not initialized") }),
+      addDeliveryProvider: async (provider: Omit<DeliveryProvider, "created_at">) => ({
+        data: null,
+        error: new Error("Supabase client not initialized"),
+      }),
+      updateDeliveryProvider: async (provider: DeliveryProvider) => ({
+        data: null,
+        error: new Error("Supabase client not initialized"),
+      }),
+      deleteDeliveryProvider: async (id: string) => ({ error: new Error("Supabase client not initialized") }),
     }
-    return { data: data?.delivery_providers || [], error: null }
-  },
-}
+  }
 
-// Type exports for convenience
-export type Product = Database["public"]["Tables"]["products"]["Row"]
-export type Category = Database["public"]["Tables"]["categories"]["Row"]
-export type Customer = Database["public"]["Tables"]["customers"]["Row"]
-export type Order = Database["public"]["Tables"]["orders"]["Row"] & { order_items?: OrderItem[] }
-export type OrderItem = Database["public"]["Tables"]["order_items"]["Row"]
-export type SettingsRow = Database["public"]["Tables"]["settings"]["Row"]
-export type DeliveryProvider = { id: string; name: string; cost_per_km: number }
+  return {
+    isOnline: true,
+    getProducts: async () => {
+      const { data, error } = await supabaseClient.from("products").select("*")
+      return { data: data as Product[], error }
+    },
+    addProduct: async (product: Product) => {
+      const { data, error } = await supabaseClient.from("products").insert([product]).select().single()
+      return { data: data as Product, error }
+    },
+    updateProduct: async (product: Product) => {
+      const { data, error } = await supabaseClient
+        .from("products")
+        .update(product)
+        .eq("id", product.id)
+        .select()
+        .single()
+      return { data: data as Product, error }
+    },
+    deleteProduct: async (id: string) => {
+      const { error } = await supabaseClient.from("products").delete().eq("id", id)
+      return { error }
+    },
+    deleteMultipleProducts: async (ids: string[]) => {
+      const { error } = await supabaseClient.from("products").delete().in("id", ids)
+      return { error }
+    },
+    getCustomers: async () => {
+      const { data, error } = await supabaseClient.from("customers").select("*")
+      return { data: data as Customer[], error }
+    },
+    addCustomer: async (customer: Customer) => {
+      const { data, error } = await supabaseClient.from("customers").insert([customer]).select().single()
+      return { data: data as Customer, error }
+    },
+    updateCustomer: async (customer: Customer) => {
+      const { data, error } = await supabaseClient
+        .from("customers")
+        .update(customer)
+        .eq("id", customer.id)
+        .select()
+        .single()
+      return { data: data as Customer, error }
+    },
+    deleteCustomer: async (id: string) => {
+      const { error } = await supabaseClient.from("customers").delete().eq("id", id)
+      return { error }
+    },
+    getOrders: async () => {
+      const { data, error } = await supabaseClient.from("orders").select("*").order("created_at", { ascending: false })
+      return { data: data as Order[], error }
+    },
+    addOrder: async (order: Omit<Order, "created_at">, items: Omit<OrderItem, "id" | "order_id">[]) => {
+      const { data: addedOrder, error: orderError } = await supabaseClient
+        .from("orders")
+        .insert([order])
+        .select()
+        .single()
+      if (orderError) return { data: null, error: orderError }
+
+      const orderItemsWithOrderId = items.map((item) => ({
+        ...item,
+        id: item.id || crypto.randomUUID(), // Ensure item has an ID
+        order_id: addedOrder.id,
+      }))
+
+      const { error: itemsError } = await supabaseClient.from("order_items").insert(orderItemsWithOrderId)
+      return { data: addedOrder as Order, error: itemsError }
+    },
+    getOrderItems: async (orderId: string) => {
+      const { data, error } = await supabaseClient.from("order_items").select("*").eq("order_id", orderId)
+      return { data: data as OrderItem[], error }
+    },
+    updateOrderStatus: async (orderId: string, status: string, timestampField: "voided_at" | "refunded_at") => {
+      const updateData: Partial<Order> = { status }
+      if (timestampField) {
+        updateData[timestampField] = new Date().toISOString()
+      }
+      const { data, error } = await supabaseClient.from("orders").update(updateData).eq("id", orderId).select().single()
+      return { data: data as Order, error }
+    },
+    refundOrder: async (orderId: string, refundAmount: number, reason: string) => {
+      // This is a simplified refund. In a real app, you'd handle partial refunds,
+      // payment gateway integration, etc.
+      const { data, error } = await supabaseClient
+        .from("orders")
+        .update({
+          status: "refunded",
+          payment_status: "refunded",
+          refunded_at: new Date().toISOString(),
+          refund_reason: reason,
+          // For partial refunds, you might adjust amount_paid or add a refund_amount field
+          // For simplicity, we're marking as fully refunded here.
+        })
+        .eq("id", orderId)
+        .select()
+        .single()
+      return { data: data as Order, error }
+    },
+    deleteOrder: async (id: string) => {
+      const { error } = await supabaseClient.from("orders").delete().eq("id", id)
+      return { error }
+    },
+    getCategories: async () => {
+      const { data, error } = await supabaseClient.from("categories").select("*")
+      return { data: data as Category[], error }
+    },
+    addCategory: async (category: Omit<Category, "id" | "created_at">) => {
+      const newCategory = { ...category, id: crypto.randomUUID() }
+      const { data, error } = await supabaseClient.from("categories").insert([newCategory]).select().single()
+      return { data: data as Category, error }
+    },
+    getDeliveryProviders: async () => {
+      const { data, error } = await supabaseClient.from("delivery_providers").select("*")
+      return { data: data as DeliveryProvider[], error }
+    },
+    addDeliveryProvider: async (provider: Omit<DeliveryProvider, "created_at">) => {
+      const newProvider = { ...provider, id: crypto.randomUUID() }
+      const { data, error } = await supabaseClient.from("delivery_providers").insert([newProvider]).select().single()
+      return { data: data as DeliveryProvider, error }
+    },
+    updateDeliveryProvider: async (provider: DeliveryProvider) => {
+      const { data, error } = await supabaseClient
+        .from("delivery_providers")
+        .update(provider)
+        .eq("id", provider.id)
+        .select()
+        .single()
+      return { data: data as DeliveryProvider, error }
+    },
+    deleteDeliveryProvider: async (id: string) => {
+      const { error } = await supabaseClient.from("delivery_providers").delete().eq("id", id)
+      return { error }
+    },
+  }
+}
